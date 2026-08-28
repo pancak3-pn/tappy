@@ -40,7 +40,7 @@ function escapeHtml(value) {
 }
 function emailTemplate({ preheader, badge, title, greeting, message, rows, notice }) {
   const rowHtml = rows.map(([label, value, strong = false]) => `<tr><td style="padding:13px 0;border-bottom:1px solid #e5e3dc;color:#666660;font-size:13px">${escapeHtml(label)}</td><td align="right" style="padding:13px 0;border-bottom:1px solid #e5e3dc;color:#151515;font-size:${strong ? '18px' : '13px'};font-weight:${strong ? '700' : '600'}">${value}</td></tr>`).join('')
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media(max-width:600px){.email-wrap{padding:24px 12px!important}.email-card{padding:26px 20px!important}.email-title{font-size:30px!important}.email-logo{font-size:25px!important}}</style></head><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3f2ee"><tr><td class="email-wrap" align="center" style="padding:44px 20px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px"><tr><td class="email-logo" style="padding:0 4px 24px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td class="email-card" style="padding:38px 38px 34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 16px;color:#244a3a;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${escapeHtml(badge)}</p><h1 class="email-title" style="margin:0 0 18px;font-size:38px;line-height:1.04;letter-spacing:-1.8px">${escapeHtml(title)}</h1><p style="margin:0 0 12px;font-size:15px;line-height:1.65">Hi ${escapeHtml(greeting)},</p><p style="margin:0;color:#53534f;font-size:15px;line-height:1.65">${escapeHtml(message)}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px;border-top:1px solid #e5e3dc">${rowHtml}</table><div style="margin-top:26px;padding:16px 18px;border-left:3px solid #244a3a;background:#eef3f0;color:#34483f;font-size:13px;line-height:1.55">${escapeHtml(notice)}</div></td></tr><tr><td style="padding:22px 4px 0;color:#777770;font-size:12px;line-height:1.6">Questions? Reply to this email or contact <a href="mailto:hello@tappy.ph" style="color:#244a3a;text-decoration:none">hello@tappy.ph</a>.<br>Tappy · Made in the Philippines</td></tr></table></td></tr></table></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media(max-width:600px){.email-wrap{padding:24px 12px!important}.email-card{padding:26px 20px!important}.email-title{font-size:30px!important}.email-logo{font-size:25px!important}}</style></head><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3f2ee"><tr><td class="email-wrap" align="center" style="padding:44px 20px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px"><tr><td class="email-logo" style="padding:0 4px 24px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td class="email-card" style="padding:38px 38px 34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 16px;color:#244a3a;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${escapeHtml(badge)}</p><h1 class="email-title" style="margin:0 0 18px;font-size:38px;line-height:1.04;letter-spacing:-1.8px">${escapeHtml(title)}</h1><p style="margin:0 0 12px;font-size:15px;line-height:1.65">Hi ${escapeHtml(greeting)},</p><p style="margin:0;color:#53534f;font-size:15px;line-height:1.65">${escapeHtml(message)}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px;border-top:1px solid #e5e3dc">${rowHtml}</table><div style="margin-top:26px;padding:16px 18px;border-left:3px solid #244a3a;background:#eef3f0;color:#34483f;font-size:13px;line-height:1.55">${escapeHtml(notice)}</div></td></tr><tr><td style="padding:22px 4px 0;color:#777770;font-size:12px;line-height:1.6">Questions? Reply to this email or contact <a href="mailto:hello@tappycard.tech" style="color:#244a3a;text-decoration:none">hello@tappycard.tech</a>.<br>Tappy · Made in the Philippines</td></tr></table></td></tr></table></body></html>`
 }
 
 async function deliverEmail({ to, subject, html, text, idempotencyKey }) {
@@ -59,22 +59,22 @@ async function sendOrderConfirmation(order) {
   const address = `${order.address}, ${order.city} ${order.postal}`
   return deliverEmail({
     to:order.email,
-    subject:`Order received - ${order.orderNumber}`,
-    idempotencyKey:`order-v2-${order.orderNumber}`,
-    text:`Hi ${order.name}, your Tappy order ${order.orderNumber} has been reserved. Total: PHP ${order.total}. Complete your GCash payment and submit the receipt for verification. Delivery address: ${address}`,
+    subject:`Order received - payment required - ${order.orderNumber}`,
+    idempotencyKey:`order-v3-${order.orderNumber}`,
+    text:`Hi ${order.name}, we received and reserved your Tappy order ${order.orderNumber}. Total: PHP ${order.total}. Complete your GCash payment and submit the receipt. Please wait for our payment verification email. Once payment is approved, we will prepare your order for delivery. Delivery address: ${address}`,
     html:emailTemplate({
       preheader:`Your Tappy order ${order.orderNumber} is reserved and awaiting GCash payment.`,
       badge:`Payment required · ${order.orderNumber}`,
       title:'Order received.',
       greeting:order.name,
-      message:'Your card is reserved. Complete the GCash QR payment and submit your receipt so we can verify it before fulfillment.',
+      message:'We received and reserved your order. Complete the GCash QR payment and submit your receipt, then wait for our payment verification email. Once approved, we will prepare your order for delivery.',
       rows:[
         [`White Tappy card × ${order.quantity}`, `&#8369;${order.quantity * unitPrice}`],
         ['Delivery', `&#8369;${shippingFee}`],
         ['Total', `&#8369;${order.total}`, true],
         ['Deliver to', escapeHtml(address)],
       ],
-      notice:'Payment is not confirmed until the GCash transaction and submitted receipt have been verified.',
+      notice:'Your order will only proceed to delivery preparation after your payment has been verified and approved.',
     }),
   })
 }
