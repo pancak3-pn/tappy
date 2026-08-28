@@ -333,7 +333,7 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/#how">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="mailto:hello@tappycard.tech">hello@tappycard.tech</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/#how">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
@@ -384,6 +384,6 @@ export default function App() {
   }, [adminPage, orderPage])
   if (unknownPage) return null
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>
-  if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout/><OrderFlow/><div className="order-page-footer shell"><Logo/><a href="mailto:hello@tappycard.tech">Need help? hello@tappycard.tech</a></div></main>
+  if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout/><OrderFlow/><div className="order-page-footer shell"><Logo/><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header/><BackToTop/><div className="site-curtain"><Hero/><HowItWorks/><DestinationSwitcher/><Products/><UseCaseTicker/><Pricing/></div><div className="footer-reveal"><div className="footer-stack"><Footer/></div></div></main>
 }
