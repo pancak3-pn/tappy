@@ -34,6 +34,11 @@ function NotFound() {
   </main>
 }
 
+function StaticPageRedirect({ href }) {
+  useEffect(() => { window.location.replace(href) }, [href])
+  return null
+}
+
 function Header({ staticNav = false, checkout = false }) {
   const [open, setOpen] = useState(false)
   return <header className={`header ${staticNav ? 'header-static' : ''} ${checkout ? 'checkout-header' : ''}`}>
@@ -42,7 +47,7 @@ function Header({ staticNav = false, checkout = false }) {
       {checkout && <span className="checkout-label">Secure checkout</span>}
       <div className={`nav-links ${open ? 'open' : ''}`} id="main-menu">
         <a href="/#products" onClick={() => setOpen(false)}>Products</a>
-        <a href="/#how" onClick={() => setOpen(false)}>How it works</a>
+        <a href="/how-it-works" onClick={() => setOpen(false)}>How it works</a>
         <a href="/#business" onClick={() => setOpen(false)}>Use cases</a>
         <a href="/#pricing" onClick={() => setOpen(false)}>Pricing</a>
       </div>
@@ -76,7 +81,7 @@ function Hero() {
           <h1>One tap. <span className="highlight-text">Every connection.</span></h1>
           <div className="button-row">
             <a className="button" href="/order"><ShoppingCartSimple size={18} aria-hidden="true" />Order Tappy</a>
-            <a className="text-link hero-text-link" href="#how"><FileText size={17} aria-hidden="true" />See How It Works</a>
+            <a className="text-link hero-text-link" href="/how-it-works"><FileText size={17} aria-hidden="true" />See How It Works</a>
           </div>
         </div>
         <div className="hero-mockup" aria-label="Tappy NFC card next to a smartphone showing a digital profile">
@@ -345,18 +350,19 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/#how">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/how-it-works">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
   const currentPath = window.location.pathname.replace(/\/+$/, '')
   const orderPage = currentPath === '/order'
   const adminPage = currentPath === '/r'
+  const howItWorksPage = currentPath === '/how-it-works'
   const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
   const managedPage = Boolean(publicPageId)
-  const unknownPage = !['','/order','/r'].includes(currentPath) && !managedPage
+  const unknownPage = !['','/order','/r','/how-it-works'].includes(currentPath) && !managedPage
   useGSAP(() => {
-    if (orderPage || adminPage || managedPage || unknownPage) return undefined
+    if (orderPage || adminPage || howItWorksPage || managedPage || unknownPage) return undefined
     const media = gsap.matchMedia()
     media.add('(min-width: 901px) and (prefers-reduced-motion: no-preference)', () => {
       gsap.utils.toArray('.gsap-media').forEach((element) => {
@@ -377,7 +383,7 @@ export default function App() {
       )
     })
     return () => media.revert()
-  }, { scope:appRef, dependencies:[orderPage, adminPage, managedPage, unknownPage] })
+  }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, managedPage, unknownPage] })
   useEffect(() => {
     document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy NFC Card Philippines | One Tap, Every Connection'
     let robots = document.querySelector('meta[name="robots"]')
@@ -395,6 +401,7 @@ export default function App() {
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
   }, [adminPage, managedPage, orderPage, unknownPage])
+  if (howItWorksPage) return <StaticPageRedirect href="/how-it-works.html"/>
   if (unknownPage) return <NotFound/>
   if (managedPage) return <TappyPage publicId={publicPageId}/>
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>
