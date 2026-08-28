@@ -303,6 +303,7 @@ h3 { text-wrap:balance; }
 .admin-topbar>div { display:flex; align-items:center; gap:10px; }
 .admin-topbar button { width:36px; height:36px; display:grid; place-items:center; border:0; border-radius:8px; background:transparent; color:#555550; cursor:pointer; }
 .admin-topbar button:hover { background:#e5e5e1; color:var(--ink); }
+.admin-topbar button.admin-alerts-active { background:#dfeae3; color:var(--forest); }
 .admin-topbar>div>span { width:32px; height:32px; display:grid; place-items:center; border-radius:8px; background:var(--forest); color:white; font-size:.72rem; font-weight:750; }
 .admin-shell { width:min(1440px,calc(100% - 268px)); margin:0 auto 0 244px; padding:30px 0 80px; }
 .admin-title { margin-bottom:24px; display:flex; align-items:end; justify-content:space-between; gap:24px; }

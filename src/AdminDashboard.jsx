@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ArrowsClockwise, ChartLineUp, House, LockKey, MagnifyingGlass, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowsClockwise, BellRinging, ChartLineUp, House, LockKey, MagnifyingGlass, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
 
 const statusOptions = [
   ['pending_payment_verification','Payment verification'],
@@ -37,6 +37,11 @@ export default function AdminDashboard() {
   const [proofUrl, setProofUrl] = useState('')
   const [proofError, setProofError] = useState('')
   const [pendingDecision, setPendingDecision] = useState('')
+  const [alertsEnabled, setAlertsEnabled] = useState(false)
+  const alertsEnabledRef = useRef(false)
+  const audioContextRef = useRef(null)
+  const knownOrderIdsRef = useRef(new Set())
+  const ordersInitializedRef = useRef(false)
 
   const scopedOrders = orders.filter((order) => orderTab === 'payment_review' ? order.payment_status === 'proof_submitted' : orderTab === 'to_fulfill' ? order.order_status === 'pending_fulfillment' : orderTab === 'in_progress' ? ['processing','shipped'].includes(order.order_status) : orderTab === 'completed' ? order.order_status === 'delivered' : orderTab === 'cancelled' ? order.order_status === 'cancelled' : true)
   const visibleOrders = scopedOrders.filter((order) => `${order.order_number} ${order.customer_name} ${order.email}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -57,7 +62,61 @@ export default function AdminDashboard() {
     setToken('')
     setOrders([])
     setSalesMetrics({ revenue:0, paid:0, cards:0, average:0, daily:[], monthly:[] })
+    alertsEnabledRef.current = false
+    setAlertsEnabled(false)
+    knownOrderIdsRef.current = new Set()
+    ordersInitializedRef.current = false
     if (message) setError(message)
+  }
+
+  async function playOrderAlert(newOrders) {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      if (AudioContext) {
+        const context = audioContextRef.current || new AudioContext()
+        audioContextRef.current = context
+        if (context.state === 'suspended') await context.resume()
+        const oscillator = context.createOscillator()
+        const gain = context.createGain()
+        oscillator.type = 'sine'
+        oscillator.frequency.setValueAtTime(740, context.currentTime)
+        oscillator.frequency.exponentialRampToValueAtTime(980, context.currentTime + .14)
+        gain.gain.setValueAtTime(.0001, context.currentTime)
+        gain.gain.exponentialRampToValueAtTime(.12, context.currentTime + .02)
+        gain.gain.exponentialRampToValueAtTime(.0001, context.currentTime + .3)
+        oscillator.connect(gain)
+        gain.connect(context.destination)
+        oscillator.start()
+        oscillator.stop(context.currentTime + .31)
+      }
+    } catch { /* Browser audio is optional. */ }
+
+    const newest = newOrders[0]
+    const message = newOrders.length === 1 ? `${newest.customer_name} placed ${newest.order_number}.` : `${newOrders.length} new orders received.`
+    notify(message)
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const browserNotice = new Notification('New Tappy order', { body:message, icon:'/assets/app-icon.png', tag:'tappy-new-order' })
+      browserNotice.onclick = () => { window.focus(); showOrders(); browserNotice.close() }
+    }
+  }
+
+  async function toggleAlerts() {
+    if (alertsEnabledRef.current) {
+      alertsEnabledRef.current = false
+      setAlertsEnabled(false)
+      notify('Order alerts muted.', 'warning')
+      return
+    }
+    if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission()
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      if (AudioContext && !audioContextRef.current) audioContextRef.current = new AudioContext()
+      if (audioContextRef.current?.state === 'suspended') await audioContextRef.current.resume()
+    } catch { /* The visible alert remains available if audio is unavailable. */ }
+    alertsEnabledRef.current = true
+    setAlertsEnabled(true)
+    const notificationPermission = 'Notification' in window ? Notification.permission : 'unsupported'
+    notify(notificationPermission === 'denied' ? 'Sound alerts enabled. Browser notifications are blocked.' : 'Order alerts enabled.')
   }
 
   async function requestJson(url, options = {}) {
@@ -71,8 +130,8 @@ export default function AdminDashboard() {
     return result
   }
 
-  async function loadOrders(activeToken = token) {
-    setLoading(true)
+  async function loadOrders(activeToken = token, quiet = false) {
+    if (!quiet) setLoading(true)
     setError('')
     try {
       const headers = { authorization:`Bearer ${activeToken}` }
@@ -83,12 +142,16 @@ export default function AdminDashboard() {
       const salesResult = salesResponse ? await salesResponse.json() : null
       if (response.status === 401 || salesResponse?.status === 401) return logout('Your admin session expired.')
       if (!response.ok) throw new Error(result.error || 'Orders could not be loaded.')
+      const newOrders = ordersInitializedRef.current ? result.orders.filter((order) => !knownOrderIdsRef.current.has(order.id)) : []
+      knownOrderIdsRef.current = new Set(result.orders.map((order) => order.id))
+      ordersInitializedRef.current = true
       setOrders(result.orders)
+      if (newOrders.length && alertsEnabledRef.current) playOrderAlert(newOrders)
       if (salesResponse?.ok && salesResult?.metrics) setSalesMetrics(salesResult.metrics)
-      else notify('Orders loaded. Sales reporting is temporarily unavailable.', 'warning')
+      else if (!quiet) notify('Orders loaded. Sales reporting is temporarily unavailable.', 'warning')
       if (selectedId && !result.orders.some((order) => order.id === selectedId)) setSelectedId('')
     } catch (requestError) { setError(requestError.message) }
-    finally { setLoading(false) }
+    finally { if (!quiet) setLoading(false) }
   }
 
   async function patchOrder(body, orderId = selected.id) {
@@ -103,7 +166,12 @@ export default function AdminDashboard() {
     if (!order.admin_read_at) patchOrder({ markRead:true }, order.id).catch((requestError) => notify(requestError.message, 'error'))
   }
 
-  useEffect(() => { if (token) loadOrders() }, [token])
+  useEffect(() => {
+    if (!token) return undefined
+    loadOrders(token)
+    const interval = window.setInterval(() => loadOrders(token, true), 30000)
+    return () => window.clearInterval(interval)
+  }, [token])
   useEffect(() => {
     if (!notification) return undefined
     const timeout = window.setTimeout(() => setNotification(null), 5200)
@@ -176,7 +244,7 @@ export default function AdminDashboard() {
 
   return <main className="admin-page">
     <header className="admin-header"><a className="admin-wordmark" href="/">tappy.</a><nav className="admin-nav" aria-label="Dashboard"><button type="button" className={adminView === 'overview' ? 'active' : ''} onClick={() => changeView('overview')}><House size={18}/>Overview</button><button type="button" className={adminView === 'orders' ? 'active' : ''} onClick={() => showOrders()}><ShoppingBag size={18}/>Orders</button><button type="button" className={adminView === 'reports' ? 'active' : ''} onClick={() => changeView('reports')}><ChartLineUp size={18}/>Reports</button></nav><div className="admin-header-actions"><span>Tappy admin</span><button type="button" onClick={() => logout()}><SignOut size={17}/>Sign out</button></div></header>
-    <div className="admin-topbar"><label><MagnifyingGlass size={18}/><input value={query} onFocus={beginSearch} onChange={(event) => setQuery(event.target.value)} placeholder="Search orders" aria-label="Search orders"/></label><div><button type="button" onClick={() => loadOrders()} disabled={loading} aria-label="Refresh dashboard"><ArrowsClockwise size={18}/></button><span aria-label="Tappy administrator">T</span></div></div>
+    <div className="admin-topbar"><label><MagnifyingGlass size={18}/><input value={query} onFocus={beginSearch} onChange={(event) => setQuery(event.target.value)} placeholder="Search orders" aria-label="Search orders"/></label><div><button type="button" className={alertsEnabled ? 'admin-alerts-active' : ''} onClick={toggleAlerts} aria-label={alertsEnabled ? 'Mute new order alerts' : 'Enable new order alerts'} title={alertsEnabled ? 'Order alerts on' : 'Enable order alerts'}><BellRinging size={18} weight={alertsEnabled ? 'fill' : 'regular'}/></button><button type="button" onClick={() => loadOrders()} disabled={loading} aria-label="Refresh dashboard"><ArrowsClockwise size={18}/></button><span aria-label="Tappy administrator">T</span></div></div>
     <div className="admin-shell">
       <div className="admin-title"><div><h1>{adminView === 'overview' ? 'Overview' : adminView === 'reports' ? 'Reports' : 'Orders'}</h1>{adminView === 'orders' && <p>{visibleOrders.length} of {orders.length}</p>}</div></div>
       {['overview','reports'].includes(adminView) && <section className="admin-sales-report" aria-labelledby="sales-report-title"><header className="admin-report-head"><div><h2 id="sales-report-title">Sales</h2></div><button type="button" onClick={() => window.print()}><Printer size={17}/>Save PDF</button></header><div className="admin-metrics" aria-label="Sales metrics"><div><span>Revenue</span><strong>{money(metrics.revenue)}</strong><small>Paid</small></div><div><span>Orders</span><strong>{metrics.paid}</strong><small>{metrics.unread} new</small></div><div><span>Cards sold</span><strong>{metrics.cards}</strong><small>Units</small></div><div><span>Average</span><strong>{money(metrics.average)}</strong><small>{metrics.payment} to verify</small></div></div><div className="sales-chart-grid"><SalesChart data={metrics.daily} label="14 days" type="day"/><SalesChart data={metrics.monthly} label="6 months" type="month"/></div><footer className="admin-report-footer"><span>Tappy sales report</span><span>Generated {new Intl.DateTimeFormat('en-PH', { dateStyle:'long' }).format(new Date())}</span></footer></section>}
