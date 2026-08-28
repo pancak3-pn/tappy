@@ -7,4 +7,6 @@ server/data/
 *.log
 
 .vercel
+
+.vercel
 .env*
