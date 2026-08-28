@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Briefcase, CalendarBlank, EnvelopeSimple, Globe, LinkedinLogo, MapPin, Phone } from '@phosphor-icons/react'
+import { Briefcase, CalendarBlank, EnvelopeSimple, Globe, LinkedinLogo, MapPin } from '@phosphor-icons/react'
 import { SiFacebook, SiGoogle, SiGooglemaps, SiInstagram } from 'react-icons/si'
 
 const linkIcons = {
@@ -27,25 +27,26 @@ export default function TappyPage({ publicId }) {
     return () => { active = false }
   }, [publicId])
 
-  function saveContact() {
-    const lines = ['BEGIN:VCARD', 'VERSION:3.0', `FN:${page.display_name}`]
-    if (page.headline) lines.push(`TITLE:${page.headline}`)
-    if (page.phone) lines.push(`TEL:${page.phone}`)
-    if (page.email) lines.push(`EMAIL:${page.email}`)
-    lines.push('END:VCARD')
-    const url = URL.createObjectURL(new Blob([lines.join('\r\n')], { type:'text/vcard;charset=utf-8' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${page.display_name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'tappy-contact'}.vcf`
-    anchor.click()
-    URL.revokeObjectURL(url)
-  }
+  useEffect(() => {
+    if (!page) return
+    document.title = `${page.display_name} | Tappy`
+    const description = page.bio || [page.headline, page.location].filter(Boolean).join(' in ') || `Connect with ${page.display_name} on Tappy.`
+    const values = {
+      'meta[name="description"]':description,
+      'meta[property="og:title"]':`${page.display_name} | Tappy`,
+      'meta[property="og:description"]':description,
+      'meta[property="og:url"]':window.location.href,
+      'meta[name="twitter:title"]':`${page.display_name} | Tappy`,
+      'meta[name="twitter:description"]':description,
+    }
+    Object.entries(values).forEach(([selector, content]) => document.querySelector(selector)?.setAttribute('content', content))
+  }, [page])
 
   if (state === 'loading') return <main className="managed-page-state"><span className="managed-page-logo">tappy.</span><p>Opening page...</p></main>
   if (state === 'missing') return <main className="managed-page-state"><a className="managed-page-logo" href="/">tappy.</a><h1>Page unavailable.</h1><p>This Tappy Page may be inactive or the link may be incorrect.</p></main>
 
   const updateUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech&su=${encodeURIComponent(`Update request for Tappy Page ${publicId}`)}`
-  return <main className="managed-page" data-accent={page.accent}>
+  return <main className="managed-page" data-accent={page.accent} data-background={page.background_texture || 'clean'}>
     <div className="managed-page-shell">
       <header><a href="/" aria-label="Tappy home">tappy.</a></header>
       <section className="managed-page-profile">
@@ -53,17 +54,13 @@ export default function TappyPage({ publicId }) {
         <div><h1>{page.display_name}</h1>{page.headline && <p className="managed-page-headline">{page.headline}</p>}{page.location && <p className="managed-page-location"><MapPin size={15}/>{page.location}</p>}</div>
       </section>
       {page.bio && <p className="managed-page-bio">{page.bio}</p>}
-      {(page.phone || page.email) && <div className="managed-page-actions">
-        <button type="button" onClick={saveContact}>Save contact</button>
-        <div className="managed-page-icon-row" aria-label="Contact and public links">
-          {page.phone && <a href={`tel:${page.phone}`} aria-label={`Call ${page.display_name}`} title="Call" data-link-type="phone"><Phone size={20}/></a>}
+      {(page.phone || page.email || page.links?.length) && <div className="managed-page-actions">
+        {page.phone && <a className="managed-page-call" href={`tel:${page.phone}`} aria-label={`Call ${page.display_name}`}>Call now</a>}
+        {(page.email || page.links?.length) && <div className="managed-page-icon-row" aria-label="Contact and public links">
           {page.email && <a href={`mailto:${page.email}`} aria-label={`Email ${page.display_name}`} title="Email" data-link-type="email"><EnvelopeSimple size={20}/></a>}
           {page.links?.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return <a href={link.url} target="_blank" rel="noreferrer" key={`${link.url}-${index}`} aria-label={link.label} title={link.label} data-link-type={link.type}><Icon size={20}/></a> })}
-        </div>
+        </div>}
       </div>}
-      {!page.phone && !page.email && !!page.links?.length && <nav className="managed-page-icon-row managed-page-links-only" aria-label={`${page.display_name} public links`}>
-        {page.links.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return <a href={link.url} target="_blank" rel="noreferrer" key={`${link.url}-${index}`} aria-label={link.label} title={link.label} data-link-type={link.type}><Icon size={20}/></a> })}
-      </nav>}
       <footer><a href={updateUrl} target="_blank" rel="noreferrer">Request an update</a><span>Powered by Tappy</span></footer>
     </div>
   </main>

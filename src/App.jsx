@@ -152,9 +152,9 @@ function DestinationSwitcher() {
 }
 
 const showcaseSlides = [
-  { image:'/assets/tappy-hero.jpg', label:'Professionals', title:'Make every introduction count.', result:'Share contact, socials and work.' },
+  { image:'/assets/tappy-hero.jpg', label:'Professionals', title:'Make connections count.', result:'Share contact, socials and work.' },
   { image:'/assets/tappy-cafe.png', label:'Cafes and shops', title:'Turn visits into action.', result:'Open menus, maps and reviews.' },
-  { image:'/assets/tappy-clinic.png', label:'Clinics and studios', title:'Keep booking one tap away.', result:'Connect customers to the right page.' },
+  { image:'/assets/tappy-clinic.png', label:'Clinics and studios', title:'Bookings, one tap away.', result:'Connect customers to the right page.' },
 ]
 
 function Products() {
@@ -373,10 +373,12 @@ export default function App() {
   useEffect(() => {
     document.title = adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
     let robots = document.querySelector('meta[name="robots"]')
-    if (adminPage || managedPage) {
-      if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
-      robots.content = 'noindex,nofollow,noarchive'
-    } else if (robots) robots.remove()
+    if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
+    robots.content = adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
+    const canonical = document.querySelector('link[rel="canonical"]')
+    canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : 'https://www.tappycard.tech/')
+    const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : 'Tappy connects one physical NFC card to every place you want people to find you.'
+    document.querySelector('meta[name="description"]')?.setAttribute('content', description)
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f7f6f2')
     const elements = document.querySelectorAll('[data-fade]')
     const observer = new IntersectionObserver((entries) => {

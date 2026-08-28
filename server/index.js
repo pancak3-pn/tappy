@@ -63,6 +63,7 @@ function pageFields(body, partial = false) {
   assign('phone', clean(body.phone, 32) || null)
   assign('location', clean(body.location, 140) || null)
   assign('accent', ['forest','ink','blue'].includes(body.accent) ? body.accent : 'forest')
+  assign('backgroundTexture', ['clean','linen','silver','forest-grain','blueprint'].includes(body.backgroundTexture) ? body.backgroundTexture : 'clean')
   assign('links', cleanPageLinks(body.links))
   assign('internalNotes', clean(body.internalNotes, 1000) || null)
   assign('orderId', /^[0-9a-f-]{36}$/i.test(body.orderId || '') ? body.orderId : null)
@@ -368,10 +369,10 @@ export async function handler(request, response) {
   const publicPageMatch = url.pathname.match(/^\/api\/pages\/([A-Za-z0-9_-]{22})$/)
   if (request.method === 'GET' && publicPageMatch) {
     const { data, error } = await supabase.from('tappy_pages')
-      .select('public_id,display_name,headline,bio,photo_url,email,phone,location,accent,links,updated_at')
+      .select('*')
       .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
     if (error || !data) return send(response, 404, { error:'Page not found.' })
-    return send(response, 200, { page:data })
+    return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', links:data.links, updated_at:data.updated_at } })
   }
 
   const proofSubmission = url.pathname.match(/^\/api\/orders\/([A-Z0-9-]+)\/payment-proof$/)

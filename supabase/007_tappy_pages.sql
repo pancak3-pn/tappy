@@ -11,6 +11,7 @@ create table if not exists public.tappy_pages (
   phone text check (phone is null or char_length(phone) <= 32),
   location text check (location is null or char_length(location) <= 140),
   accent text not null default 'forest' check (accent in ('forest', 'ink', 'blue')),
+  background_texture text not null default 'clean' check (background_texture in ('clean', 'linen', 'silver', 'forest-grain', 'blueprint')),
   links jsonb not null default '[]'::jsonb check (jsonb_typeof(links) = 'array'),
   internal_notes text check (internal_notes is null or char_length(internal_notes) <= 1000),
   published_at timestamptz,

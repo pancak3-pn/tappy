@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /order
+Disallow: /p/
+Disallow: /r
+
+Sitemap: https://www.tappycard.tech/sitemap.xml
