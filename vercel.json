@@ -32,6 +32,8 @@
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/:path*", "destination": "/index.html" }
+    { "source": "/order", "destination": "/index.html" },
+    { "source": "/r", "destination": "/index.html" },
+    { "source": "/p/:path*", "destination": "/index.html" }
   ]
 }

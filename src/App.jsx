@@ -23,6 +23,17 @@ const destinations = [
 
 function Logo() { return <a className="logo" href="/#top" aria-label="Tappy home" translate="no">tappy.</a> }
 
+function NotFound() {
+  return <main className="not-found">
+    <header><Logo/><span>404</span></header>
+    <section>
+      <p>Page not found</p>
+      <h1>This page does not exist.</h1>
+      <a className="button" href="/">Return home</a>
+    </section>
+  </main>
+}
+
 function Header({ staticNav = false, checkout = false }) {
   const [open, setOpen] = useState(false)
   return <header className={`header ${staticNav ? 'header-static' : ''} ${checkout ? 'checkout-header' : ''}`}>
@@ -368,13 +379,10 @@ export default function App() {
     return () => media.revert()
   }, { scope:appRef, dependencies:[orderPage, adminPage, managedPage, unknownPage] })
   useEffect(() => {
-    if (unknownPage) window.location.replace('/')
-  }, [unknownPage])
-  useEffect(() => {
-    document.title = adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
+    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
     let robots = document.querySelector('meta[name="robots"]')
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
-    robots.content = adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
+    robots.content = unknownPage || adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
     const canonical = document.querySelector('link[rel="canonical"]')
     canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : 'https://www.tappycard.tech/')
     const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : 'Tappy connects one physical NFC card to every place you want people to find you.'
@@ -386,8 +394,8 @@ export default function App() {
     }, { threshold:0.14, rootMargin:'0px 0px -5% 0px' })
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [adminPage, managedPage, orderPage])
-  if (unknownPage) return null
+  }, [adminPage, managedPage, orderPage, unknownPage])
+  if (unknownPage) return <NotFound/>
   if (managedPage) return <TappyPage publicId={publicPageId}/>
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout/><OrderFlow/><div className="order-page-footer shell"><Logo/><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>

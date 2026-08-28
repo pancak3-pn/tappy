@@ -272,6 +272,14 @@ h3 { text-wrap:balance; }
 .proof-success p { margin:0; color:var(--muted); font-size:.82rem; line-height:1.45; }
 
 body:has(.managed-page),body:has(.managed-page-state) { padding-top:0; }
+body:has(.not-found) { padding-top:0; }
+.not-found { min-height:100dvh; padding:clamp(24px,4vw,52px); display:flex; flex-direction:column; background:#f3f2ed; color:var(--ink); }
+.not-found>header { display:flex; align-items:center; justify-content:space-between; }
+.not-found>header span { color:var(--muted); font-family:var(--font-mono); font-size:.68rem; }
+.not-found>section { width:min(780px,100%); margin:auto 0; padding-block:60px; }
+.not-found>section>p { margin:0 0 18px; color:var(--forest); font-family:var(--font-mono); font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+.not-found h1 { max-width:8ch; margin:0; font-size:clamp(3.5rem,9vw,7.8rem); line-height:.9; letter-spacing:-.065em; }
+.not-found .button { width:max-content; margin-top:34px; }
 .managed-page { --page-accent:#244a3a; min-height:100dvh; padding:24px; display:grid; place-items:center; background:#efefec; color:#151515; }
 .managed-page[data-accent="ink"] { --page-accent:#151515; }
 .managed-page[data-accent="blue"] { --page-accent:#2757a5; }
