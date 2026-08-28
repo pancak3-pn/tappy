@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowsClockwise, BellRinging, ChartLineUp, Copy, Eye, House, IdentificationCard, LockKey, MagnifyingGlass, Plus, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
+import { ArrowsClockwise, BellRinging, Briefcase, CalendarBlank, ChartLineUp, Copy, EnvelopeSimple, Eye, Globe, House, IdentificationCard, LinkedinLogo, LockKey, MagnifyingGlass, Phone, Plus, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
+import { SiFacebook, SiGoogle, SiGooglemaps, SiInstagram } from 'react-icons/si'
 
 const statusOptions = [
   ['pending_payment_verification','Payment verification'],
@@ -17,7 +18,13 @@ const shortMoney = (value) => Number(value) >= 1000 ? `P${(Number(value) / 1000)
 const dayLabel = (value) => new Intl.DateTimeFormat('en-PH', { month:'short', day:'numeric' }).format(new Date(`${value}T00:00:00`))
 const monthLabel = (value) => new Intl.DateTimeFormat('en-PH', { month:'short' }).format(new Date(`${value}-01T00:00:00`))
 const emptyPage = { displayName:'', headline:'', bio:'', photoUrl:'', email:'', phone:'', location:'', accent:'forest', status:'draft', orderId:'', internalNotes:'', links:[{ type:'website', label:'Website', url:'' }, { type:'instagram', label:'Instagram', url:'' }, { type:'linkedin', label:'LinkedIn', url:'' }] }
-const pageToForm = (page) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', status:page.status || 'draft', orderId:page.order_id || '', internalNotes:page.internal_notes || '', links:['website','instagram','linkedin'].map((type) => page.links?.find((link) => link.type === type) || { type, label:type[0].toUpperCase() + type.slice(1), url:'' }) })
+const pageLinkTypes = [
+  ['website','Website'], ['maps','Google Maps'], ['facebook','Facebook'], ['instagram','Instagram'],
+  ['linkedin','LinkedIn'], ['reviews','Google Reviews'], ['portfolio','Portfolio'], ['booking','Booking'],
+]
+const pageLinkIcons = { website:Globe, maps:SiGooglemaps, facebook:SiFacebook, instagram:SiInstagram, linkedin:LinkedinLogo, reviews:SiGoogle, portfolio:Briefcase, booking:CalendarBlank }
+const defaultPageLinks = () => [['website','Website'],['instagram','Instagram'],['linkedin','LinkedIn']].map(([type,label]) => ({ type, label, url:'' }))
+const pageToForm = (page) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', status:page.status || 'draft', orderId:page.order_id || '', internalNotes:page.internal_notes || '', links:[...(page.links || []), ...defaultPageLinks()].slice(0,3) })
 
 function SalesChart({ data = [], label, type }) {
   const maximum = Math.max(...data.map((entry) => Number(entry.revenue || 0)), 1)
@@ -175,7 +182,11 @@ export default function AdminDashboard() {
 
   function editPage(page) { setSelectedPageId(page.id); setPageForm(pageToForm(page)) }
   function newPage() { setSelectedPageId(''); setPageForm(emptyPage) }
-  function updatePageLink(index, field, value) { setPageForm((current) => ({ ...current, links:current.links.map((link, linkIndex) => linkIndex === index ? { ...link, [field]:value } : link) })) }
+  function updatePageLink(index, field, value) { setPageForm((current) => ({ ...current, links:current.links.map((link, linkIndex) => {
+    if (linkIndex !== index) return link
+    if (field === 'type') return { ...link, type:value, label:pageLinkTypes.find(([type]) => type === value)?.[1] || 'Website' }
+    return { ...link, [field]:value }
+  }) })) }
   async function copyPageLink(page) {
     const url = `${window.location.origin}/p/${page.public_id}`
     try {
@@ -306,10 +317,10 @@ export default function AdminDashboard() {
           <div><label>Email<input type="email" value={pageForm.email} onChange={(event) => setPageForm({ ...pageForm, email:event.target.value })}/></label><label>Phone<input value={pageForm.phone} onChange={(event) => setPageForm({ ...pageForm, phone:event.target.value })}/></label></div>
           <label>Location<input value={pageForm.location} onChange={(event) => setPageForm({ ...pageForm, location:event.target.value })}/></label>
           <div><label>Accent<select value={pageForm.accent} onChange={(event) => setPageForm({ ...pageForm, accent:event.target.value })}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Status<select value={pageForm.status} onChange={(event) => setPageForm({ ...pageForm, status:event.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select></label></div>
-          <fieldset><legend>Public links</legend>{pageForm.links.map((link, index) => <div key={link.type}><label>{link.type}<input value={link.label} maxLength="40" onChange={(event) => updatePageLink(index, 'label', event.target.value)}/></label><label>URL<input type="url" placeholder="https://" value={link.url} onChange={(event) => updatePageLink(index, 'url', event.target.value)}/></label></div>)}</fieldset>
+          <fieldset><legend>Public links</legend>{pageForm.links.map((link, index) => <div key={index}><label>Destination<select value={link.type} onChange={(event) => updatePageLink(index, 'type', event.target.value)}>{pageLinkTypes.map(([type,label]) => <option value={type} key={type}>{label}</option>)}</select></label><label>URL<input type="url" placeholder="https://" value={link.url} onChange={(event) => updatePageLink(index, 'url', event.target.value)}/></label></div>)}</fieldset>
           <label>Internal notes<textarea value={pageForm.internalNotes} maxLength="1000" onChange={(event) => setPageForm({ ...pageForm, internalNotes:event.target.value })}/></label>
           <button className="button" type="submit" disabled={pageSaving}>{pageSaving ? 'Saving...' : selectedPage ? 'Save page' : 'Create page'}</button>
-        </div><div className="admin-page-preview" data-accent={pageForm.accent}><span>Live preview</span><div>{pageForm.photoUrl ? <img src={pageForm.photoUrl} alt=""/> : <i>{pageForm.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase() || 'TP'}</i>}<h3>{pageForm.displayName || 'Customer name'}</h3><p>{pageForm.headline || 'Role or business'}</p>{pageForm.bio && <small>{pageForm.bio}</small>}<button type="button">Save contact</button>{pageForm.links.filter((link) => link.url).map((link) => <b key={link.type}>{link.label}</b>)}</div></div></div></form>
+        </div><div className="admin-page-preview" data-accent={pageForm.accent}><span>Live preview</span><div>{pageForm.photoUrl ? <img src={pageForm.photoUrl} alt=""/> : <i>{pageForm.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase() || 'TP'}</i>}<h3>{pageForm.displayName || 'Customer name'}</h3><p>{pageForm.headline || 'Role or business'}</p>{pageForm.bio && <small>{pageForm.bio}</small>}<button type="button">Save contact</button><nav aria-label="Profile actions">{pageForm.phone && <span title="Call" data-link-type="phone"><Phone size={17}/></span>}{pageForm.email && <span title="Email" data-link-type="email"><EnvelopeSimple size={17}/></span>}{pageForm.links.filter((link) => link.url).map((link, index) => { const Icon = pageLinkIcons[link.type] || Globe; return <span key={`${link.type}-${index}`} title={link.label} data-link-type={link.type}><Icon size={17}/></span> })}</nav></div></div></div></form>
       </section>}
       {error && <p className="admin-error" role="alert">{error}</p>}
       {adminView === 'orders' && <div className="admin-order-tabs" role="tablist" aria-label="Order views">{[['all','All'],['payment_review','Payment review'],['to_fulfill','To fulfill'],['in_progress','In progress'],['completed','Completed'],['cancelled','Cancelled']].map(([value,label]) => <button type="button" role="tab" aria-selected={orderTab === value} className={orderTab === value ? 'active' : ''} onClick={() => { setOrderTab(value); setSelectedId('') }} key={value}>{label}</button>)}</div>}

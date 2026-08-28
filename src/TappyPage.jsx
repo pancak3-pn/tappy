@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
-import { ArrowSquareOut, EnvelopeSimple, FacebookLogo, Globe, InstagramLogo, LinkedinLogo, MapPin, Phone, Star } from '@phosphor-icons/react'
+import { Briefcase, CalendarBlank, EnvelopeSimple, Globe, LinkedinLogo, MapPin, Phone } from '@phosphor-icons/react'
+import { SiFacebook, SiGoogle, SiGooglemaps, SiInstagram } from 'react-icons/si'
 
 const linkIcons = {
   website:Globe,
-  instagram:InstagramLogo,
+  instagram:SiInstagram,
   linkedin:LinkedinLogo,
-  facebook:FacebookLogo,
-  maps:MapPin,
-  reviews:Star,
-  portfolio:Globe,
-  booking:Globe,
+  facebook:SiFacebook,
+  maps:SiGooglemaps,
+  reviews:SiGoogle,
+  portfolio:Briefcase,
+  booking:CalendarBlank,
 }
 
 export default function TappyPage({ publicId }) {
@@ -46,7 +47,7 @@ export default function TappyPage({ publicId }) {
   const updateUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech&su=${encodeURIComponent(`Update request for Tappy Page ${publicId}`)}`
   return <main className="managed-page" data-accent={page.accent}>
     <div className="managed-page-shell">
-      <header><a href="/" aria-label="Tappy home">tappy.</a><span>Managed page</span></header>
+      <header><a href="/" aria-label="Tappy home">tappy.</a></header>
       <section className="managed-page-profile">
         {page.photo_url ? <img src={page.photo_url} alt={page.display_name} width="144" height="144"/> : <div className="managed-page-initials" aria-hidden="true">{page.display_name.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</div>}
         <div><h1>{page.display_name}</h1>{page.headline && <p className="managed-page-headline">{page.headline}</p>}{page.location && <p className="managed-page-location"><MapPin size={15}/>{page.location}</p>}</div>
@@ -54,11 +55,14 @@ export default function TappyPage({ publicId }) {
       {page.bio && <p className="managed-page-bio">{page.bio}</p>}
       {(page.phone || page.email) && <div className="managed-page-actions">
         <button type="button" onClick={saveContact}>Save contact</button>
-        {page.phone && <a href={`tel:${page.phone}`} aria-label={`Call ${page.display_name}`}><Phone size={19}/></a>}
-        {page.email && <a href={`mailto:${page.email}`} aria-label={`Email ${page.display_name}`}><EnvelopeSimple size={19}/></a>}
+        <div className="managed-page-icon-row" aria-label="Contact and public links">
+          {page.phone && <a href={`tel:${page.phone}`} aria-label={`Call ${page.display_name}`} title="Call" data-link-type="phone"><Phone size={20}/></a>}
+          {page.email && <a href={`mailto:${page.email}`} aria-label={`Email ${page.display_name}`} title="Email" data-link-type="email"><EnvelopeSimple size={20}/></a>}
+          {page.links?.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return <a href={link.url} target="_blank" rel="noreferrer" key={`${link.url}-${index}`} aria-label={link.label} title={link.label} data-link-type={link.type}><Icon size={20}/></a> })}
+        </div>
       </div>}
-      {!!page.links?.length && <nav className="managed-page-links" aria-label={`${page.display_name} links`}>
-        {page.links.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return <a href={link.url} target="_blank" rel="noreferrer" key={`${link.url}-${index}`}><Icon size={20}/><span>{link.label}</span><ArrowSquareOut size={17}/></a> })}
+      {!page.phone && !page.email && !!page.links?.length && <nav className="managed-page-icon-row managed-page-links-only" aria-label={`${page.display_name} public links`}>
+        {page.links.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return <a href={link.url} target="_blank" rel="noreferrer" key={`${link.url}-${index}`} aria-label={link.label} title={link.label} data-link-type={link.type}><Icon size={20}/></a> })}
       </nav>}
       <footer><a href={updateUrl} target="_blank" rel="noreferrer">Request an update</a><span>Powered by Tappy</span></footer>
     </div>
