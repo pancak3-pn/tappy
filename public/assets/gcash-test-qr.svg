@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">Test GCash QR placeholder</title>
+  <desc id="desc">A non-scannable placeholder graphic for checkout testing.</desc>
+  <rect width="320" height="320" rx="24" fill="#fff"/>
+  <g fill="#151515">
+    <path d="M28 28h84v84H28zm16 16v52h52V44zm13 13h26v26H57zM208 28h84v84h-84zm16 16v52h52V44zm13 13h26v26h-26zM28 208h84v84H28zm16 16v52h52v-52zm13 13h26v26H57z" fill-rule="evenodd"/>
+    <path d="M136 30h18v18h-18zm34 0h18v18h-18zm-34 34h18v18h-18zm34 0h18v52h-18zm-34 52h52v18h-52zm72 18h18v18h-18zm34 0h50v18h-50zm-106 18h18v18h-18zm34 0h18v52h-18zm38 18h18v18h-18zm34 0h18v18h-18zm34 0h16v52h-16zm-140 34h18v18h-18zm72 0h52v18h-52zm-72 34h18v54h-18zm34 0h18v18h-18zm38 0h18v18h-18zm34 0h50v18h-50zm-72 34h18v20h-18zm38 0h18v20h-18zm34 0h18v20h-18zm34 0h16v20h-16z"/>
+  </g>
+  <rect x="111" y="134" width="98" height="52" rx="12" fill="#244a3a"/>
+  <text x="160" y="155" fill="#fff" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">TEST QR</text>
+  <text x="160" y="173" fill="#fff" font-family="Arial,sans-serif" font-size="9" text-anchor="middle">NOT PAYABLE</text>
+</svg>
