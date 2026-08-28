@@ -589,6 +589,7 @@ body:has(.not-found) { padding-top:0; }
 .footer .logo { color:var(--paper); }
 .footer-grid p,.footer-grid a:not(.logo) { color:#c5c5bf; }
 .footer-grid a:not(.logo):hover { color:var(--paper); }
+.footer-social-link { display:inline-flex; align-items:center; gap:8px; }
 .footer-grid b { font-family:var(--font-mono); font-size:.65rem; text-transform:uppercase; letter-spacing:.07em; }
 .footer-bottom { margin-top:22px; padding-top:22px; display:flex; justify-content:space-between; border-top:1px solid #343432; color:#aaa9a4; font-family:var(--font-mono); font-size:.62rem; }
 

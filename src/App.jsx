@@ -5,7 +5,7 @@ import { useGSAP } from '@gsap/react'
 import AdminDashboard from './AdminDashboard'
 import TappyPage from './TappyPage'
 import {
-  ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FileText, Globe,
+  ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
   InstagramLogo, List, MapPin, Phone,
   Minus, Plus, ShareNetwork, ShoppingCartSimple, Star, X,
 } from '@phosphor-icons/react'
@@ -345,7 +345,7 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/#how">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/#how">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
@@ -379,13 +379,13 @@ export default function App() {
     return () => media.revert()
   }, { scope:appRef, dependencies:[orderPage, adminPage, managedPage, unknownPage] })
   useEffect(() => {
-    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
+    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy NFC Card Philippines | One Tap, Every Connection'
     let robots = document.querySelector('meta[name="robots"]')
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
     robots.content = unknownPage || adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
     const canonical = document.querySelector('link[rel="canonical"]')
     canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : 'https://www.tappycard.tech/')
-    const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : 'Tappy connects one physical NFC card to every place you want people to find you.'
+    const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : 'Share contact details, social profiles, reviews, menus, booking links and websites instantly with a reusable Tappy NFC digital business card. No app required.'
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f7f6f2')
     const elements = document.querySelectorAll('[data-fade]')
