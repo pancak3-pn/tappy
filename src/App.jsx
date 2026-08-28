@@ -81,7 +81,7 @@ function Hero() {
         </div>
         <div className="hero-mockup" aria-label="Tappy NFC card next to a smartphone showing a digital profile">
           <div className="hero-image-stage">
-            <video src="/assets/video.mp4" poster="/assets/tappy-clinic.png" autoPlay muted loop playsInline preload="metadata" aria-label="A white Tappy NFC card beside a smartphone" />
+            <video src="/assets/video.mp4" autoPlay muted loop playsInline preload="auto" aria-label="A white Tappy NFC card beside a smartphone" />
           </div>
         </div>
       </div>
