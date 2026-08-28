@@ -474,7 +474,7 @@ h3 { text-wrap:balance; }
 .footer-reveal { position:relative; z-index:1; height:clamp(390px,52dvh,470px); background:var(--paper); }
 .footer-stack { position:relative; height:100%; overflow:hidden; background:var(--paper); }
 .footer { position:absolute; inset:0; z-index:1; min-height:0; padding:64px 0 26px; background:var(--ink); color:var(--paper); will-change:clip-path; }
-.footer-grid { display:grid; grid-template-columns:2fr 1fr; }
+.footer-grid { display:grid; grid-template-columns:2fr 1fr 1fr; }
 .footer-grid>div { min-height:170px; padding:23px 23px 23px 0; display:flex; flex-direction:column; align-items:flex-start; gap:13px; font-size:.84rem; }
 .footer-grid>div:last-child { border-right:0; }
 .footer .logo { color:var(--paper); }
