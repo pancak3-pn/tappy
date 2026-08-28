@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowsClockwise, BellRinging, ChartLineUp, House, LockKey, MagnifyingGlass, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
+import { ArrowsClockwise, BellRinging, ChartLineUp, Copy, Eye, House, IdentificationCard, LockKey, MagnifyingGlass, Plus, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
 
 const statusOptions = [
   ['pending_payment_verification','Payment verification'],
@@ -16,6 +16,8 @@ const date = (value) => new Intl.DateTimeFormat('en-PH', { dateStyle:'medium', t
 const shortMoney = (value) => Number(value) >= 1000 ? `P${(Number(value) / 1000).toFixed(Number(value) >= 10000 ? 0 : 1)}k` : `P${Number(value || 0)}`
 const dayLabel = (value) => new Intl.DateTimeFormat('en-PH', { month:'short', day:'numeric' }).format(new Date(`${value}T00:00:00`))
 const monthLabel = (value) => new Intl.DateTimeFormat('en-PH', { month:'short' }).format(new Date(`${value}-01T00:00:00`))
+const emptyPage = { displayName:'', headline:'', bio:'', photoUrl:'', email:'', phone:'', location:'', accent:'forest', status:'draft', orderId:'', internalNotes:'', links:[{ type:'website', label:'Website', url:'' }, { type:'instagram', label:'Instagram', url:'' }, { type:'linkedin', label:'LinkedIn', url:'' }] }
+const pageToForm = (page) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', status:page.status || 'draft', orderId:page.order_id || '', internalNotes:page.internal_notes || '', links:['website','instagram','linkedin'].map((type) => page.links?.find((link) => link.type === type) || { type, label:type[0].toUpperCase() + type.slice(1), url:'' }) })
 
 function SalesChart({ data = [], label, type }) {
   const maximum = Math.max(...data.map((entry) => Number(entry.revenue || 0)), 1)
@@ -37,6 +39,10 @@ export default function AdminDashboard() {
   const [proofUrl, setProofUrl] = useState('')
   const [proofError, setProofError] = useState('')
   const [pendingDecision, setPendingDecision] = useState('')
+  const [pages, setPages] = useState([])
+  const [selectedPageId, setSelectedPageId] = useState('')
+  const [pageForm, setPageForm] = useState(emptyPage)
+  const [pageSaving, setPageSaving] = useState(false)
   const [alertsEnabled, setAlertsEnabled] = useState(false)
   const alertsEnabledRef = useRef(false)
   const audioContextRef = useRef(null)
@@ -46,6 +52,7 @@ export default function AdminDashboard() {
   const scopedOrders = orders.filter((order) => orderTab === 'payment_review' ? order.payment_status === 'proof_submitted' : orderTab === 'to_fulfill' ? order.order_status === 'pending_fulfillment' : orderTab === 'in_progress' ? ['processing','shipped'].includes(order.order_status) : orderTab === 'completed' ? order.order_status === 'delivered' : orderTab === 'cancelled' ? order.order_status === 'cancelled' : true)
   const visibleOrders = scopedOrders.filter((order) => `${order.order_number} ${order.customer_name} ${order.email}`.toLowerCase().includes(query.trim().toLowerCase()))
   const selected = selectedId ? orders.find((order) => order.id === selectedId) || null : null
+  const selectedPage = selectedPageId ? pages.find((page) => page.id === selectedPageId) || null : null
   const metrics = {
     ...salesMetrics,
     unread:orders.filter((order) => !order.admin_read_at).length,
@@ -54,13 +61,14 @@ export default function AdminDashboard() {
   }
 
   function notify(message, type = 'success') { setNotification({ message, type, id:Date.now() }) }
-  function changeView(view) { setAdminView(view); setOrderTab('all'); setQuery(''); setSelectedId('') }
+  function changeView(view) { setAdminView(view); setOrderTab('all'); setQuery(''); setSelectedId(''); if (view !== 'pages') setSelectedPageId('') }
   function showOrders(tab = 'all') { setAdminView('orders'); setOrderTab(tab); setQuery(''); setSelectedId('') }
   function beginSearch() { if (['overview','reports'].includes(adminView)) changeView('orders') }
   function logout(message = '') {
     sessionStorage.removeItem('tappy-admin-token')
     setToken('')
     setOrders([])
+    setPages([])
     setSalesMetrics({ revenue:0, paid:0, cards:0, average:0, daily:[], monthly:[] })
     alertsEnabledRef.current = false
     setAlertsEnabled(false)
@@ -154,6 +162,37 @@ export default function AdminDashboard() {
     finally { if (!quiet) setLoading(false) }
   }
 
+  async function loadPages() {
+    try {
+      const result = await requestJson('/api/admin/pages')
+      setPages(result.pages)
+      if (selectedPageId) {
+        const refreshed = result.pages.find((page) => page.id === selectedPageId)
+        if (refreshed) setPageForm(pageToForm(refreshed))
+      }
+    } catch (requestError) { notify(requestError.message, 'error') }
+  }
+
+  function editPage(page) { setSelectedPageId(page.id); setPageForm(pageToForm(page)) }
+  function newPage() { setSelectedPageId(''); setPageForm(emptyPage) }
+  function updatePageLink(index, field, value) { setPageForm((current) => ({ ...current, links:current.links.map((link, linkIndex) => linkIndex === index ? { ...link, [field]:value } : link) })) }
+  async function savePage(event) {
+    event.preventDefault()
+    setPageSaving(true)
+    try {
+      const result = await requestJson(selectedPage ? `/api/admin/pages/${selectedPage.id}` : '/api/admin/pages', {
+        method:selectedPage ? 'PATCH' : 'POST',
+        headers:{ 'content-type':'application/json' },
+        body:JSON.stringify(pageForm),
+      })
+      setPages((current) => selectedPage ? current.map((page) => page.id === result.page.id ? result.page : page) : [result.page, ...current])
+      setSelectedPageId(result.page.id)
+      setPageForm(pageToForm(result.page))
+      notify(selectedPage ? 'Tappy Page updated.' : 'Tappy Page created.')
+    } catch (requestError) { notify(requestError.message, 'error') }
+    finally { setPageSaving(false) }
+  }
+
   async function patchOrder(body, orderId = selected.id) {
     const result = await requestJson(`/api/admin/orders/${orderId}`, { method:'PATCH', headers:{ 'content-type':'application/json' }, body:JSON.stringify(body) })
     setOrders((current) => current.map((order) => order.id === result.order.id ? result.order : order))
@@ -172,6 +211,7 @@ export default function AdminDashboard() {
     const interval = window.setInterval(() => loadOrders(token, true), 30000)
     return () => window.clearInterval(interval)
   }, [token])
+  useEffect(() => { if (token && adminView === 'pages') loadPages() }, [token, adminView])
   useEffect(() => {
     if (!notification) return undefined
     const timeout = window.setTimeout(() => setNotification(null), 5200)
@@ -243,12 +283,27 @@ export default function AdminDashboard() {
   if (!token) return <main className="admin-login"><a className="admin-wordmark" href="/">tappy.</a><form onSubmit={login}><LockKey size={27}/><h1>Order desk.</h1><p>Private access for Tappy operations.</p><label>Admin password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required autoFocus/></label><button className="button" type="submit" disabled={loading}>{loading ? 'Checking...' : 'Sign in'}</button>{error && <p className="admin-error" role="alert">{error}</p>}</form></main>
 
   return <main className="admin-page">
-    <header className="admin-header"><a className="admin-wordmark" href="/">tappy.</a><nav className="admin-nav" aria-label="Dashboard"><button type="button" className={adminView === 'overview' ? 'active' : ''} onClick={() => changeView('overview')}><House size={18}/>Overview</button><button type="button" className={adminView === 'orders' ? 'active' : ''} onClick={() => showOrders()}><ShoppingBag size={18}/>Orders</button><button type="button" className={adminView === 'reports' ? 'active' : ''} onClick={() => changeView('reports')}><ChartLineUp size={18}/>Reports</button></nav><div className="admin-header-actions"><span>Tappy admin</span><button type="button" onClick={() => logout()}><SignOut size={17}/>Sign out</button></div></header>
+    <header className="admin-header"><a className="admin-wordmark" href="/">tappy.</a><nav className="admin-nav" aria-label="Dashboard"><button type="button" className={adminView === 'overview' ? 'active' : ''} onClick={() => changeView('overview')}><House size={18}/>Overview</button><button type="button" className={adminView === 'orders' ? 'active' : ''} onClick={() => showOrders()}><ShoppingBag size={18}/>Orders</button><button type="button" className={adminView === 'pages' ? 'active' : ''} onClick={() => changeView('pages')}><IdentificationCard size={18}/>Tappy Pages</button><button type="button" className={adminView === 'reports' ? 'active' : ''} onClick={() => changeView('reports')}><ChartLineUp size={18}/>Reports</button></nav><div className="admin-header-actions"><span>Tappy admin</span><button type="button" onClick={() => logout()}><SignOut size={17}/>Sign out</button></div></header>
     <div className="admin-topbar"><label><MagnifyingGlass size={18}/><input value={query} onFocus={beginSearch} onChange={(event) => setQuery(event.target.value)} placeholder="Search orders" aria-label="Search orders"/></label><div><button type="button" className={alertsEnabled ? 'admin-alerts-active' : ''} onClick={toggleAlerts} aria-label={alertsEnabled ? 'Mute new order alerts' : 'Enable new order alerts'} title={alertsEnabled ? 'Order alerts on' : 'Enable order alerts'}><BellRinging size={18} weight={alertsEnabled ? 'fill' : 'regular'}/></button><button type="button" onClick={() => loadOrders()} disabled={loading} aria-label="Refresh dashboard"><ArrowsClockwise size={18}/></button><span aria-label="Tappy administrator">T</span></div></div>
     <div className="admin-shell">
-      <div className="admin-title"><div><h1>{adminView === 'overview' ? 'Overview' : adminView === 'reports' ? 'Reports' : 'Orders'}</h1>{adminView === 'orders' && <p>{visibleOrders.length} of {orders.length}</p>}</div></div>
+      <div className="admin-title"><div><h1>{adminView === 'overview' ? 'Overview' : adminView === 'reports' ? 'Reports' : adminView === 'pages' ? 'Tappy Pages' : 'Orders'}</h1>{adminView === 'orders' && <p>{visibleOrders.length} of {orders.length}</p>}{adminView === 'pages' && <p>{pages.length} managed pages</p>}</div>{adminView === 'pages' && <button className="admin-new-page" type="button" onClick={newPage}><Plus size={17}/>New page</button>}</div>
       {['overview','reports'].includes(adminView) && <section className="admin-sales-report" aria-labelledby="sales-report-title"><header className="admin-report-head"><div><h2 id="sales-report-title">Sales</h2></div><button type="button" onClick={() => window.print()}><Printer size={17}/>Save PDF</button></header><div className="admin-metrics" aria-label="Sales metrics"><div><span>Revenue</span><strong>{money(metrics.revenue)}</strong><small>Paid</small></div><div><span>Orders</span><strong>{metrics.paid}</strong><small>{metrics.unread} new</small></div><div><span>Cards sold</span><strong>{metrics.cards}</strong><small>Units</small></div><div><span>Average</span><strong>{money(metrics.average)}</strong><small>{metrics.payment} to verify</small></div></div><div className="sales-chart-grid"><SalesChart data={metrics.daily} label="14 days" type="day"/><SalesChart data={metrics.monthly} label="6 months" type="month"/></div><footer className="admin-report-footer"><span>Tappy sales report</span><span>Generated {new Intl.DateTimeFormat('en-PH', { dateStyle:'long' }).format(new Date())}</span></footer></section>}
       {adminView === 'overview' && <section className="admin-overview-grid" aria-label="Operations overview"><article><header><h2>Attention</h2><span>Live</span></header><button type="button" onClick={() => showOrders('payment_review')}><span>Payment proofs</span><strong>{metrics.payment}</strong></button><button type="button" onClick={() => showOrders('to_fulfill')}><span>To fulfill</span><strong>{metrics.fulfillment}</strong></button><button type="button" onClick={() => showOrders()}><span>Unread</span><strong>{metrics.unread}</strong></button></article><article><header><h2>Recent orders</h2><button type="button" onClick={() => showOrders()}>View all</button></header>{orders.slice(0,5).map((order) => <button type="button" className="overview-order" onClick={() => { showOrders(); setSelectedId(order.id) }} key={order.id}><span><b>{order.order_number}</b><small>{order.customer_name}</small></span><span><b>{money(order.total)}</b><small>{humanize(order.payment_status)}</small></span></button>)}</article></section>}
+      {adminView === 'pages' && <section className="admin-pages-workspace">
+        <aside className="admin-pages-list"><header><strong>Managed pages</strong><button type="button" onClick={newPage}><Plus size={16}/></button></header>{pages.length ? pages.map((page) => <button type="button" className={selectedPageId === page.id ? 'active' : ''} onClick={() => editPage(page)} key={page.id}><span><b>{page.display_name}</b><small>{page.orders?.order_number || 'No linked order'}</small></span><em data-page-status={page.status}>{page.status}</em></button>) : <p>No pages yet.</p>}</aside>
+        <form className="admin-page-editor" onSubmit={savePage}><header><div><span>{selectedPage ? 'Edit managed page' : 'Create managed page'}</span><h2>{pageForm.displayName || 'Untitled page'}</h2></div>{selectedPage && <div><button type="button" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/p/${selectedPage.public_id}`)} title="Copy public URL"><Copy size={17}/></button><a href={`/p/${selectedPage.public_id}`} target="_blank" rel="noreferrer" title="Open public page"><Eye size={17}/></a></div>}</header><div className="admin-page-editor-grid"><div className="admin-page-fields">
+          <label>Linked paid order<select value={pageForm.orderId} onChange={(event) => setPageForm({ ...pageForm, orderId:event.target.value })}><option value="">No linked order</option>{orders.filter((order) => order.payment_status === 'paid' && (!pages.some((page) => page.order_id === order.id) || selectedPage?.order_id === order.id)).map((order) => <option value={order.id} key={order.id}>{order.order_number} · {order.customer_name}</option>)}</select></label>
+          <div><label>Display name<input value={pageForm.displayName} maxLength="100" required onChange={(event) => setPageForm({ ...pageForm, displayName:event.target.value })}/></label><label>Role or headline<input value={pageForm.headline} maxLength="120" onChange={(event) => setPageForm({ ...pageForm, headline:event.target.value })}/></label></div>
+          <label>Short introduction<textarea value={pageForm.bio} maxLength="360" onChange={(event) => setPageForm({ ...pageForm, bio:event.target.value })}/></label>
+          <label>Profile image URL<input type="url" placeholder="https://" value={pageForm.photoUrl} onChange={(event) => setPageForm({ ...pageForm, photoUrl:event.target.value })}/></label>
+          <div><label>Email<input type="email" value={pageForm.email} onChange={(event) => setPageForm({ ...pageForm, email:event.target.value })}/></label><label>Phone<input value={pageForm.phone} onChange={(event) => setPageForm({ ...pageForm, phone:event.target.value })}/></label></div>
+          <label>Location<input value={pageForm.location} onChange={(event) => setPageForm({ ...pageForm, location:event.target.value })}/></label>
+          <div><label>Accent<select value={pageForm.accent} onChange={(event) => setPageForm({ ...pageForm, accent:event.target.value })}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Status<select value={pageForm.status} onChange={(event) => setPageForm({ ...pageForm, status:event.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="disabled">Disabled</option></select></label></div>
+          <fieldset><legend>Public links</legend>{pageForm.links.map((link, index) => <div key={link.type}><label>{link.type}<input value={link.label} maxLength="40" onChange={(event) => updatePageLink(index, 'label', event.target.value)}/></label><label>URL<input type="url" placeholder="https://" value={link.url} onChange={(event) => updatePageLink(index, 'url', event.target.value)}/></label></div>)}</fieldset>
+          <label>Internal notes<textarea value={pageForm.internalNotes} maxLength="1000" onChange={(event) => setPageForm({ ...pageForm, internalNotes:event.target.value })}/></label>
+          <button className="button" type="submit" disabled={pageSaving}>{pageSaving ? 'Saving...' : selectedPage ? 'Save page' : 'Create page'}</button>
+        </div><div className="admin-page-preview" data-accent={pageForm.accent}><span>Live preview</span><div>{pageForm.photoUrl ? <img src={pageForm.photoUrl} alt=""/> : <i>{pageForm.displayName.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase() || 'TP'}</i>}<h3>{pageForm.displayName || 'Customer name'}</h3><p>{pageForm.headline || 'Role or business'}</p>{pageForm.bio && <small>{pageForm.bio}</small>}<button type="button">Save contact</button>{pageForm.links.filter((link) => link.url).map((link) => <b key={link.type}>{link.label}</b>)}</div></div></div></form>
+      </section>}
       {error && <p className="admin-error" role="alert">{error}</p>}
       {adminView === 'orders' && <div className="admin-order-tabs" role="tablist" aria-label="Order views">{[['all','All'],['payment_review','Payment review'],['to_fulfill','To fulfill'],['in_progress','In progress'],['completed','Completed'],['cancelled','Cancelled']].map(([value,label]) => <button type="button" role="tab" aria-selected={orderTab === value} className={orderTab === value ? 'active' : ''} onClick={() => { setOrderTab(value); setSelectedId('') }} key={value}>{label}</button>)}</div>}
       {adminView === 'orders' && (selected ? <div className="admin-resource-detail"><button className="admin-back" type="button" onClick={() => setSelectedId('')}>Back to orders</button><section className="admin-detail">

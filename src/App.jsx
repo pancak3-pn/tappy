@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
 import AdminDashboard from './AdminDashboard'
+import TappyPage from './TappyPage'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FileText, Globe,
   InstagramLogo, List, MapPin, Phone,
@@ -340,9 +341,11 @@ export default function App() {
   const currentPath = window.location.pathname.replace(/\/+$/, '')
   const orderPage = currentPath === '/order'
   const adminPage = currentPath === '/r'
-  const unknownPage = !['','/order','/r'].includes(currentPath)
+  const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
+  const managedPage = Boolean(publicPageId)
+  const unknownPage = !['','/order','/r'].includes(currentPath) && !managedPage
   useGSAP(() => {
-    if (orderPage || adminPage || unknownPage) return undefined
+    if (orderPage || adminPage || managedPage || unknownPage) return undefined
     const media = gsap.matchMedia()
     media.add('(min-width: 901px) and (prefers-reduced-motion: no-preference)', () => {
       gsap.utils.toArray('.gsap-media').forEach((element) => {
@@ -363,14 +366,14 @@ export default function App() {
       )
     })
     return () => media.revert()
-  }, { scope:appRef, dependencies:[orderPage, adminPage, unknownPage] })
+  }, { scope:appRef, dependencies:[orderPage, adminPage, managedPage, unknownPage] })
   useEffect(() => {
     if (unknownPage) window.location.replace('/')
   }, [unknownPage])
   useEffect(() => {
-    document.title = adminPage ? 'Order Desk | Tappy' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
+    document.title = adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy | One tap. Every connection.'
     let robots = document.querySelector('meta[name="robots"]')
-    if (adminPage) {
+    if (adminPage || managedPage) {
       if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
       robots.content = 'noindex,nofollow,noarchive'
     } else if (robots) robots.remove()
@@ -381,8 +384,9 @@ export default function App() {
     }, { threshold:0.14, rootMargin:'0px 0px -5% 0px' })
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [adminPage, orderPage])
+  }, [adminPage, managedPage, orderPage])
   if (unknownPage) return null
+  if (managedPage) return <TappyPage publicId={publicPageId}/>
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout/><OrderFlow/><div className="order-page-footer shell"><Logo/><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header/><BackToTop/><div className="site-curtain"><Hero/><HowItWorks/><DestinationSwitcher/><Products/><UseCaseTicker/><Pricing/></div><div className="footer-reveal"><div className="footer-stack"><Footer/></div></div></main>

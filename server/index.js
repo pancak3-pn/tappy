@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
@@ -35,6 +35,40 @@ async function readJson(request, maxBytes = 32_000) {
 }
 
 function clean(value, limit) { return typeof value === 'string' ? value.trim().slice(0, limit) : '' }
+function safeHttpsUrl(value, limit = 500) {
+  const candidate = clean(value, limit)
+  if (!candidate) return null
+  try {
+    const parsed = new URL(candidate)
+    return parsed.protocol === 'https:' ? parsed.toString() : null
+  } catch { return null }
+}
+function cleanPageLinks(value) {
+  if (!Array.isArray(value)) return []
+  const allowedTypes = new Set(['website', 'instagram', 'linkedin', 'facebook', 'portfolio', 'booking', 'reviews', 'maps'])
+  return value.slice(0, 8).map((link) => ({
+    type:allowedTypes.has(link?.type) ? link.type : 'website',
+    label:clean(link?.label, 40),
+    url:safeHttpsUrl(link?.url),
+  })).filter((link) => link.label && link.url)
+}
+function pageFields(body, partial = false) {
+  const update = {}
+  const assign = (key, value) => { if (!partial || body[key] !== undefined) update[key] = value }
+  assign('displayName', clean(body.displayName, 100))
+  assign('headline', clean(body.headline, 120) || null)
+  assign('bio', clean(body.bio, 360) || null)
+  assign('photoUrl', safeHttpsUrl(body.photoUrl))
+  assign('email', clean(body.email, 160).toLowerCase() || null)
+  assign('phone', clean(body.phone, 32) || null)
+  assign('location', clean(body.location, 140) || null)
+  assign('accent', ['forest','ink','blue'].includes(body.accent) ? body.accent : 'forest')
+  assign('links', cleanPageLinks(body.links))
+  assign('internalNotes', clean(body.internalNotes, 1000) || null)
+  assign('orderId', /^[0-9a-f-]{36}$/i.test(body.orderId || '') ? body.orderId : null)
+  assign('status', ['draft','published','disabled'].includes(body.status) ? body.status : 'draft')
+  return Object.fromEntries(Object.entries(update).map(([key, value]) => [key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`), value]))
+}
 function escapeHtml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;')
 }
@@ -190,6 +224,41 @@ export async function handler(request, response) {
 
   if (url.pathname.startsWith('/api/admin/')) {
     if (!isAdmin(request)) return send(response, 401, { error:'Admin session required.' })
+    if (request.method === 'GET' && url.pathname === '/api/admin/pages') {
+      const { data, error } = await supabase.from('tappy_pages').select('*,orders(order_number,customer_name,email,payment_status)').order('created_at', { ascending:false }).limit(200)
+      if (error) return send(response, 503, { error:'Tappy Pages could not be loaded. Run migration 007 if it is not installed.' })
+      return send(response, 200, { pages:data })
+    }
+    if (request.method === 'POST' && url.pathname === '/api/admin/pages') {
+      try {
+        const body = await readJson(request)
+        const fields = pageFields(body)
+        if (!fields.display_name) return send(response, 400, { error:'Add a page name.' })
+        const publicId = randomBytes(16).toString('base64url')
+        const { data, error } = await supabase.from('tappy_pages').insert({
+          ...fields,
+          public_id:publicId,
+          published_at:fields.status === 'published' ? new Date().toISOString() : null,
+        }).select('*,orders(order_number,customer_name,email,payment_status)').single()
+        if (error?.code === '23505') return send(response, 409, { error:'That order already has a Tappy Page.' })
+        if (error) return send(response, 503, { error:'Tappy Page could not be created.' })
+        return send(response, 201, { page:data })
+      } catch { return send(response, 400, { error:'Invalid page details.' }) }
+    }
+    const pageMatch = url.pathname.match(/^\/api\/admin\/pages\/([0-9a-f-]{36})$/i)
+    if (request.method === 'PATCH' && pageMatch) {
+      try {
+        const body = await readJson(request)
+        const fields = pageFields(body, true)
+        if (fields.display_name !== undefined && !fields.display_name) return send(response, 400, { error:'Add a page name.' })
+        if (fields.status === 'published') fields.published_at = new Date().toISOString()
+        if (!Object.keys(fields).length) return send(response, 400, { error:'No valid changes supplied.' })
+        const { data, error } = await supabase.from('tappy_pages').update(fields).eq('id', pageMatch[1]).select('*,orders(order_number,customer_name,email,payment_status)').single()
+        if (error?.code === '23505') return send(response, 409, { error:'That order already has a Tappy Page.' })
+        if (error) return send(response, 503, { error:'Tappy Page could not be updated.' })
+        return send(response, 200, { page:data })
+      } catch { return send(response, 400, { error:'Invalid page details.' }) }
+    }
     if (request.method === 'GET' && url.pathname === '/api/admin/sales-metrics') {
       const paidOrders = []
       const pageSize = 1000
@@ -294,6 +363,15 @@ export async function handler(request, response) {
       } catch { return send(response, 400, { error:'Invalid request.' }) }
     }
     return send(response, 404, { error:'Not found' })
+  }
+
+  const publicPageMatch = url.pathname.match(/^\/api\/pages\/([A-Za-z0-9_-]{22})$/)
+  if (request.method === 'GET' && publicPageMatch) {
+    const { data, error } = await supabase.from('tappy_pages')
+      .select('public_id,display_name,headline,bio,photo_url,email,phone,location,accent,links,updated_at')
+      .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
+    if (error || !data) return send(response, 404, { error:'Page not found.' })
+    return send(response, 200, { page:data })
   }
 
   const proofSubmission = url.pathname.match(/^\/api\/orders\/([A-Z0-9-]+)\/payment-proof$/)
