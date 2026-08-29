@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/node'
 import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
@@ -21,6 +22,31 @@ const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailFrom = process.env.EMAIL_FROM || 'Tappy <orders@example.com>'
 const unitPrice = 199
 const allowedPayments = new Set(['gcash'])
+
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn:process.env.SENTRY_DSN,
+    environment:process.env.SENTRY_ENVIRONMENT || (process.env.VERCEL ? 'production' : 'development'),
+    sendDefaultPii:false,
+    tracesSampleRate:process.env.VERCEL ? 0.05 : 0,
+    beforeSend(event) {
+      if (event.request) {
+        delete event.request.data
+        delete event.request.cookies
+        if (event.request.headers) {
+          delete event.request.headers.authorization
+          delete event.request.headers.cookie
+        }
+        event.request.url = event.request.url?.replace(/\/api\/pages\/edit\/[A-Za-z0-9_-]+/g, '/api/pages/edit/[redacted]')
+      }
+      if (event.transaction) event.transaction = event.transaction.replace(/\/api\/pages\/edit\/[A-Za-z0-9_-]+/g, '/api/pages/edit/[redacted]')
+      event.breadcrumbs?.forEach((breadcrumb) => {
+        if (breadcrumb.data?.url) breadcrumb.data.url = breadcrumb.data.url.replace(/\/api\/pages\/edit\/[A-Za-z0-9_-]+/g, '/api/pages/edit/[redacted]')
+      })
+      return event
+    },
+  })
+}
 
 // Simple in-memory rate limiter. On Vercel each warm instance keeps its own
 // counters, which still blunts bursts; pair with Vercel WAF or Upstash Redis
@@ -77,6 +103,11 @@ function cleanPageLinks(value) {
     url:safeHttpsUrl(link?.url),
   })).filter((link) => link.label && link.url)
 }
+function customerPageFields(body) {
+  const allowed = new Set(['displayName','headline','bio','photoUrl','email','phone','location','accent','backgroundTexture','links'])
+  return pageFields(Object.fromEntries(Object.entries(body || {}).filter(([key]) => allowed.has(key))), true)
+}
+function hashEditToken(token) { return createHash('sha256').update(token).digest('hex') }
 function pageFields(body, partial = false) {
   const update = {}
   const assign = (key, value) => { if (!partial || body[key] !== undefined) update[key] = value }
@@ -190,6 +221,19 @@ async function sendDeliveryEmail(order) {
   })
 }
 
+async function sendPageAccessEmail({ email, name, editUrl, expiresAt }) {
+  if (!resendApiKey) return { status:'not_configured', id:null }
+  const safeUrl = escapeHtml(editUrl)
+  const expiry = new Intl.DateTimeFormat('en-PH', { dateStyle:'long' }).format(new Date(expiresAt))
+  return deliverEmail({
+    to:email,
+    subject:'Your Tappy Page editing link',
+    idempotencyKey:`page-access-${hashEditToken(editUrl).slice(0, 24)}`,
+    text:`Hi ${name}, you can update your Tappy Page at ${editUrl}. This private link expires on ${expiry}. Do not share it.`,
+    html:`<!doctype html><html><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:44px 20px"><table role="presentation" width="100%" style="max-width:600px"><tr><td style="padding:0 4px 24px;font-size:28px;font-weight:800">tappy.</td></tr><tr><td style="padding:38px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 14px;color:#244a3a;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Private page access</p><h1 style="margin:0 0 18px;font-size:36px;line-height:1.05">Your page, in your hands.</h1><p style="color:#53534f;line-height:1.65">Hi ${escapeHtml(name)}, use the private button below to update your public Tappy Page. Anyone with this link can edit your page, so do not share it.</p><p style="margin:28px 0"><a href="${safeUrl}" style="display:inline-block;padding:15px 22px;border-radius:10px;background:#244a3a;color:#fff;text-decoration:none;font-weight:700">Edit my Tappy Page</a></p><p style="margin:0;color:#777770;font-size:12px;line-height:1.6">This link expires on ${escapeHtml(expiry)}. Contact hello@tappycard.tech if you need a new link.</p></td></tr></table></td></tr></table></body></html>`,
+  })
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(left)
   const b = Buffer.from(right)
@@ -232,7 +276,7 @@ function createOrderNumber() {
   return `TAP-${day}-${randomUUID().slice(0, 6).toUpperCase()}`
 }
 
-export async function handler(request, response) {
+async function requestHandler(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1')
   if (request.method === 'GET' && request.url === '/api/health') {
     const { error } = await supabase.from('orders').select('id', { head:true, count:'exact' }).limit(1)
@@ -300,6 +344,36 @@ export async function handler(request, response) {
         if (error) return send(response, 503, { error:'Tappy Page could not be updated.' })
         return send(response, 200, { page:data })
       } catch { return send(response, 400, { error:'Invalid page details.' }) }
+    }
+    const pageAccessMatch = url.pathname.match(/^\/api\/admin\/pages\/([0-9a-f-]{36})\/customer-access$/i)
+    if (request.method === 'POST' && pageAccessMatch) {
+      const { data:page, error:pageError } = await supabase.from('tappy_pages')
+        .select('id,display_name,order_id,orders(customer_name,email,payment_status)')
+        .eq('id', pageAccessMatch[1]).single()
+      if (pageError || !page) return send(response, 404, { error:'Tappy Page not found.' })
+      const order = Array.isArray(page.orders) ? page.orders[0] : page.orders
+      if (!page.order_id || order?.payment_status !== 'paid') return send(response, 409, { error:'Link this page to a paid order before granting customer access.' })
+      if (!order?.email) return send(response, 409, { error:'The linked order has no customer email.' })
+      const rawToken = randomBytes(32).toString('base64url')
+      const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+      const { error:revokeError } = await supabase.from('page_edit_tokens').update({ revoked_at:new Date().toISOString() }).eq('page_id', page.id).is('revoked_at', null)
+      if (revokeError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
+      const { error:tokenError } = await supabase.from('page_edit_tokens').insert({ page_id:page.id, token_hash:hashEditToken(rawToken), expires_at:expiresAt })
+      if (tokenError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
+      const origin = clean(process.env.PUBLIC_SITE_URL, 300).replace(/\/$/, '') || 'https://www.tappycard.tech'
+      const editUrl = `${origin}/edit/${rawToken}`
+      let email = { status:'not_configured', id:null }
+      try { email = await sendPageAccessEmail({ email:order.email, name:order.customer_name || page.display_name, editUrl, expiresAt }) }
+      catch (emailError) {
+        Sentry.captureException(emailError, { tags:{ operation:'page_access_email' } })
+        email = { status:'failed', id:null }
+      }
+      return send(response, 201, { editUrl, expiresAt, emailStatus:email.status })
+    }
+    if (request.method === 'DELETE' && pageAccessMatch) {
+      const { error } = await supabase.from('page_edit_tokens').update({ revoked_at:new Date().toISOString() }).eq('page_id', pageAccessMatch[1]).is('revoked_at', null)
+      if (error) return send(response, 503, { error:'Customer access could not be revoked. Run migration 012.' })
+      return send(response, 200, { revoked:true })
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/sales-metrics') {
       const paidOrders = []
@@ -456,6 +530,37 @@ export async function handler(request, response) {
     return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', links:data.links, updated_at:data.updated_at } })
   }
 
+  const customerEditMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})$/)
+  if (customerEditMatch && ['GET','PATCH'].includes(request.method)) {
+    if (!rateLimit(`page-edit:${clientIp(request)}`, 120, 60 * 60 * 1000)) return send(response, 429, { error:'Too many page requests. Try again later.' })
+    const tokenHash = hashEditToken(customerEditMatch[1])
+    const { data:access, error:accessError } = await supabase.from('page_edit_tokens').select('id,page_id,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle()
+    if (accessError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
+    if (!access || access.revoked_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This editing link is invalid or expired.' })
+    const { data:page, error:pageError } = await supabase.from('tappy_pages').select('*').eq('id', access.page_id).single()
+    if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
+    if (request.method === 'GET') {
+      await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
+      return send(response, 200, { page:{ display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture || 'clean', links:page.links, public_id:page.public_id }, expiresAt:access.expires_at })
+    }
+    try {
+      const body = await readJson(request)
+      const fields = customerPageFields(body)
+      if (fields.display_name !== undefined && !fields.display_name) return send(response, 400, { error:'Add a display name.' })
+      if (!Object.keys(fields).length) return send(response, 400, { error:'No valid changes supplied.' })
+      const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, links:page.links }
+      const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
+      if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
+      const { data:updated, error:updateError } = await supabase.from('tappy_pages').update(fields).eq('id', page.id).select('*').single()
+      if (updateError) return send(response, 503, { error:'Your page could not be updated.' })
+      await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
+      return send(response, 200, { page:{ display_name:updated.display_name, headline:updated.headline, bio:updated.bio, photo_url:updated.photo_url, email:updated.email, phone:updated.phone, location:updated.location, accent:updated.accent, background_texture:updated.background_texture, links:updated.links, public_id:updated.public_id } })
+    } catch (error) {
+      Sentry.captureException(error, { tags:{ operation:'customer_page_update' } })
+      return send(response, 400, { error:'Invalid page details.' })
+    }
+  }
+
   const proofSubmission = url.pathname.match(/^\/api\/orders\/([A-Z0-9-]+)\/payment-proof$/)
   if (request.method === 'POST' && proofSubmission) {
     const orderNumber = proofSubmission[1]
@@ -544,7 +649,19 @@ export async function handler(request, response) {
     return send(response, 201, { orderNumber:data.order_number, total:data.total, paymentMethod:data.payment_method, paymentStatus:data.payment_status, orderStatus:data.order_status, createdAt:data.created_at, emailStatus:emailDelivery.status, proofToken:signOrderToken(data.order_number) })
   } catch (error) {
     const status = error instanceof SyntaxError ? 400 : 500
+    if (status === 500) Sentry.captureException(error, { tags:{ operation:'create_order' } })
     return send(response, status, { error:status === 400 ? 'Invalid request.' : 'The order could not be saved. Please try again.' })
+  }
+}
+
+export async function handler(request, response) {
+  try {
+    return await requestHandler(request, response)
+  } catch (error) {
+    Sentry.captureException(error, { tags:{ operation:'unhandled_api_request' } })
+    await Sentry.flush(2000)
+    if (!response.headersSent) return send(response, 500, { error:'The request could not be completed.' })
+    response.end()
   }
 }
 

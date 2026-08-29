@@ -218,6 +218,20 @@ export default function AdminDashboard() {
       notify('Profile link copied.')
     } catch { notify(`Copy this profile link: ${url}`, 'warning') }
   }
+  async function grantCustomerAccess(page) {
+    try {
+      const result = await requestJson(`/api/admin/pages/${page.id}/customer-access`, { method:'POST' })
+      try { await navigator.clipboard.writeText(result.editUrl) } catch { /* Email remains the primary delivery method. */ }
+      const emailNote = result.emailStatus === 'sent' ? ' Email sent and link copied.' : result.emailStatus === 'failed' ? ' Email failed; link copied.' : ' Email is not configured; link copied.'
+      notify(`New customer editing link created.${emailNote}`, result.emailStatus === 'failed' ? 'warning' : 'success')
+    } catch (requestError) { notify(requestError.message, 'error') }
+  }
+  async function revokeCustomerAccess(page) {
+    try {
+      await requestJson(`/api/admin/pages/${page.id}/customer-access`, { method:'DELETE' })
+      notify('Customer editing access revoked.', 'warning')
+    } catch (requestError) { notify(requestError.message, 'error') }
+  }
   async function savePage(event) {
     event.preventDefault()
     setPageSaving(true)
@@ -347,7 +361,7 @@ export default function AdminDashboard() {
       {adminView === 'overview' && <section className="admin-overview-grid" aria-label="Operations overview"><article><header><h2>Attention</h2><span>Live</span></header><button type="button" onClick={() => showOrders('payment_review')}><span>Payment proofs</span><strong>{metrics.payment}</strong></button><button type="button" onClick={() => showOrders('to_fulfill')}><span>To fulfill</span><strong>{metrics.fulfillment}</strong></button><button type="button" onClick={() => showOrders()}><span>Unread</span><strong>{metrics.unread}</strong></button></article><article><header><h2>Recent orders</h2><button type="button" onClick={() => showOrders()}>View all</button></header>{orders.slice(0,5).map((order) => <button type="button" className="overview-order" onClick={() => { showOrders(); setSelectedOrder(order) }} key={order.id}><span><b>{order.order_number}</b><small>{order.customer_name}</small></span><span><b>{money(order.total)}</b><small>{humanize(order.payment_status)}</small></span></button>)}</article></section>}
       {adminView === 'pages' && <section className="admin-pages-workspace">
         <aside className="admin-pages-list"><header><strong>Managed pages</strong><button type="button" onClick={newPage}><Plus size={16}/></button></header>{pages.length ? pages.map((page) => <button type="button" className={selectedPageId === page.id ? 'active' : ''} onClick={() => editPage(page)} key={page.id}><span><b>{page.display_name}</b><small>{page.orders?.order_number || 'No linked order'}</small></span><em data-page-status={page.status}>{page.status}</em></button>) : <p>No pages yet.</p>}</aside>
-        <form className="admin-page-editor" onSubmit={savePage}><header><div><span>{selectedPage ? 'Edit managed page' : 'Create managed page'}</span><h2>{pageForm.displayName || 'Untitled page'}</h2></div>{selectedPage && <div><a href={`/p/${selectedPage.public_id}`} target="_blank" rel="noreferrer" title="Open public page" aria-label="Open public profile"><Eye size={17}/></a></div>}</header>{selectedPage && <div className="admin-profile-url"><span>Customer profile URL</span><code>{`${window.location.origin}/p/${selectedPage.public_id}`}</code><button type="button" onClick={() => copyPageLink(selectedPage)}><Copy size={16}/>Copy</button></div>}<div className="admin-page-editor-grid"><div className="admin-page-fields">
+        <form className="admin-page-editor" onSubmit={savePage}><header><div><span>{selectedPage ? 'Edit managed page' : 'Create managed page'}</span><h2>{pageForm.displayName || 'Untitled page'}</h2></div>{selectedPage && <div><a href={`/p/${selectedPage.public_id}`} target="_blank" rel="noreferrer" title="Open public page" aria-label="Open public profile"><Eye size={17}/></a></div>}</header>{selectedPage && <><div className="admin-profile-url"><span>Customer profile URL</span><code>{`${window.location.origin}/p/${selectedPage.public_id}`}</code><button type="button" onClick={() => copyPageLink(selectedPage)}><Copy size={16}/>Copy</button></div><div className="admin-customer-access"><div><b>Customer editing</b><span>Creates a private 90-day link and emails the paid customer.</span></div><button type="button" onClick={() => grantCustomerAccess(selectedPage)}>Send access</button><button type="button" onClick={() => revokeCustomerAccess(selectedPage)}>Revoke</button></div></>}<div className="admin-page-editor-grid"><div className="admin-page-fields">
           <label>Linked paid order<select value={pageForm.orderId} onChange={(event) => setPageForm({ ...pageForm, orderId:event.target.value })}><option value="">No linked order</option>{paidOrders.filter((order) => !pages.some((page) => page.order_id === order.id) || selectedPage?.order_id === order.id).map((order) => <option value={order.id} key={order.id}>{order.order_number} · {order.customer_name}</option>)}</select></label>
           <div><label>Display name<input value={pageForm.displayName} maxLength="100" required onChange={(event) => setPageForm({ ...pageForm, displayName:event.target.value })}/></label><label>Role or headline<input value={pageForm.headline} maxLength="120" onChange={(event) => setPageForm({ ...pageForm, headline:event.target.value })}/></label></div>
           <label>Short introduction<textarea value={pageForm.bio} maxLength="360" onChange={(event) => setPageForm({ ...pageForm, bio:event.target.value })}/></label>

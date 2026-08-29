@@ -5,6 +5,7 @@ import { useGSAP } from '@gsap/react'
 import AdminDashboard from './AdminDashboard'
 import TappyPage from './TappyPage'
 import PublicPage from './PublicPages'
+import CustomerPageEditor from './CustomerPageEditor'
 import { track } from './analytics'
 import { DELIVERY_PROVINCES, getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import {
@@ -362,8 +363,10 @@ export default function App() {
   const privacyPage = currentPath === '/privacy'
   const termsPage = currentPath === '/terms'
   const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
+  const customerEditToken = currentPath.match(/^\/edit\/([A-Za-z0-9_-]{43})$/)?.[1] || ''
+  const customerEditor = Boolean(customerEditToken)
   const managedPage = Boolean(publicPageId)
-  const unknownPage = !['','/order','/r','/how-it-works','/privacy','/terms'].includes(currentPath) && !managedPage
+  const unknownPage = !['','/order','/r','/how-it-works','/privacy','/terms'].includes(currentPath) && !managedPage && !customerEditor
   useEffect(() => {
     if (currentPath === '') track('homepage_view')
     if (orderPage) track('checkout_start')
@@ -374,7 +377,7 @@ export default function App() {
     return () => document.removeEventListener('click', trackOrderClick)
   }, [currentPath, orderPage])
   useGSAP(() => {
-    if (orderPage || adminPage || managedPage || unknownPage) return undefined
+    if (orderPage || adminPage || managedPage || customerEditor || unknownPage) return undefined
     const media = gsap.matchMedia()
     media.add('(min-width: 901px) and (prefers-reduced-motion: no-preference)', () => {
       gsap.utils.toArray('.gsap-media').forEach((element) => {
@@ -395,13 +398,13 @@ export default function App() {
       )
     })
     return () => media.revert()
-  }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, privacyPage, termsPage, managedPage, unknownPage] })
+  }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, privacyPage, termsPage, managedPage, customerEditor, unknownPage] })
   useEffect(() => {
     const publicMeta = howItWorksPage ? ['How Tappy Works | NFC Card Philippines','Learn how Tappy opens profiles, reviews, maps, menus, bookings and websites with one tap.','https://www.tappycard.tech/how-it-works'] : privacyPage ? ['Privacy Policy | Tappy','Read how Tappy collects, uses, protects and shares personal information.','https://www.tappycard.tech/privacy'] : termsPage ? ['Terms of Service | Tappy','Read the terms governing Tappy cards, payments, delivery and managed profiles.','https://www.tappycard.tech/terms'] : null
-    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : publicMeta?.[0] || 'Tappy NFC Card Philippines | One Tap, Every Connection'
+    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : customerEditor ? 'Edit your Tappy Page' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : publicMeta?.[0] || 'Tappy NFC Card Philippines | One Tap, Every Connection'
     let robots = document.querySelector('meta[name="robots"]')
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
-    robots.content = unknownPage || adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
+    robots.content = unknownPage || adminPage || managedPage || customerEditor || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
     const canonical = document.querySelector('link[rel="canonical"]')
     canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : publicMeta?.[2] || 'https://www.tappycard.tech/')
     const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : publicMeta?.[1] || 'Share contact details, social profiles, reviews, menus, booking links and websites instantly with a reusable Tappy NFC digital business card. No app required.'
@@ -420,12 +423,13 @@ export default function App() {
     }, { threshold:0.14, rootMargin:'0px 0px -5% 0px' })
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [adminPage, howItWorksPage, managedPage, orderPage, privacyPage, termsPage, unknownPage])
+  }, [adminPage, customerEditor, howItWorksPage, managedPage, orderPage, privacyPage, termsPage, unknownPage])
   if (howItWorksPage) return <div ref={appRef}><PublicPage type="how" Header={Header} Footer={Footer}/></div>
   if (privacyPage) return <div ref={appRef}><PublicPage type="privacy" Header={Header} Footer={Footer}/></div>
   if (termsPage) return <div ref={appRef}><PublicPage type="terms" Header={Header} Footer={Footer}/></div>
   if (unknownPage) return <NotFound/>
   if (managedPage) return <TappyPage publicId={publicPageId}/>
+  if (customerEditor) return <CustomerPageEditor token={customerEditToken}/>
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout/><OrderFlow/><div className="order-page-footer shell"><Logo/><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header/><BackToTop/><div className="site-curtain"><Hero/><HowItWorks/><DestinationSwitcher/><Products/><UseCaseTicker/><Pricing/></div><div className="footer-reveal"><div className="footer-stack"><Footer/></div></div></main>
