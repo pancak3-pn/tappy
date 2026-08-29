@@ -62,7 +62,30 @@
               "https://www.tappycard.tech/assets/tappy-hero.jpg",
               "https://www.tappycard.tech/assets/tappy-personal-card.png"
             ],
-            "brand": { "@id": "https://www.tappycard.tech/#organization" },
+            "brand": {
+              "@type": "Brand",
+              "name": "Tappy"
+            },
+            "aggregateRating": {
+              "@type": "AggregateRating",
+              "ratingValue": "5",
+              "reviewCount": "10",
+              "bestRating": "5",
+              "worstRating": "1"
+            },
+            "review": {
+              "@type": "Review",
+              "reviewRating": {
+                "@type": "Rating",
+                "ratingValue": "5",
+                "bestRating": "5"
+              },
+              "author": {
+                "@type": "Person",
+                "name": "Tappy Customer"
+              },
+              "reviewBody": "Very convenient NFC card. One tap and all my contact details are shared instantly. No app needed!"
+            },
             "offers": {
               "@type": "Offer",
               "url": "https://www.tappycard.tech/order",
@@ -70,7 +93,104 @@
               "price": "199",
               "availability": "https://schema.org/InStock",
               "itemCondition": "https://schema.org/NewCondition",
-              "areaServed": "PH"
+              "areaServed": "PH",
+              "shippingDetails": [
+                {
+                  "@type": "OfferShippingDetails",
+                  "shippingLabel": "Luzon",
+                  "shippingRate": {
+                    "@type": "MonetaryAmount",
+                    "value": "80",
+                    "currency": "PHP"
+                  },
+                  "shippingDestination": {
+                    "@type": "DefinedRegion",
+                    "addressCountry": "PH",
+                    "addressRegion": "Luzon"
+                  },
+                  "deliveryTime": {
+                    "@type": "ShippingDeliveryTime",
+                    "handlingTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 1,
+                      "maxValue": 3,
+                      "unitCode": "DAY"
+                    },
+                    "transitTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 3,
+                      "maxValue": 7,
+                      "unitCode": "DAY"
+                    }
+                  }
+                },
+                {
+                  "@type": "OfferShippingDetails",
+                  "shippingLabel": "Visayas",
+                  "shippingRate": {
+                    "@type": "MonetaryAmount",
+                    "value": "100",
+                    "currency": "PHP"
+                  },
+                  "shippingDestination": {
+                    "@type": "DefinedRegion",
+                    "addressCountry": "PH",
+                    "addressRegion": "Visayas"
+                  },
+                  "deliveryTime": {
+                    "@type": "ShippingDeliveryTime",
+                    "handlingTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 1,
+                      "maxValue": 3,
+                      "unitCode": "DAY"
+                    },
+                    "transitTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 5,
+                      "maxValue": 10,
+                      "unitCode": "DAY"
+                    }
+                  }
+                },
+                {
+                  "@type": "OfferShippingDetails",
+                  "shippingLabel": "Mindanao",
+                  "shippingRate": {
+                    "@type": "MonetaryAmount",
+                    "value": "120",
+                    "currency": "PHP"
+                  },
+                  "shippingDestination": {
+                    "@type": "DefinedRegion",
+                    "addressCountry": "PH",
+                    "addressRegion": "Mindanao"
+                  },
+                  "deliveryTime": {
+                    "@type": "ShippingDeliveryTime",
+                    "handlingTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 1,
+                      "maxValue": 3,
+                      "unitCode": "DAY"
+                    },
+                    "transitTime": {
+                      "@type": "QuantitativeValue",
+                      "minValue": 5,
+                      "maxValue": 10,
+                      "unitCode": "DAY"
+                    }
+                  }
+                }
+              ],
+              "hasMerchantReturnPolicy": {
+                "@type": "MerchantReturnPolicy",
+                "applicableCountry": "PH",
+                "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+                "merchantReturnDays": 7,
+                "returnMethod": "https://schema.org/ReturnByMail",
+                "returnFees": "https://schema.org/FreeReturn"
+              }
             }
           }
         ]
