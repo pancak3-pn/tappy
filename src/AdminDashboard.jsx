@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowsClockwise, BellRinging, Briefcase, CalendarBlank, ChartLineUp, Copy, EnvelopeSimple, Eye, Globe, House, IdentificationCard, LinkedinLogo, LockKey, MagnifyingGlass, Plus, Printer, ShoppingBag, SignOut } from '@phosphor-icons/react'
 import { SiFacebook, SiGoogle, SiGooglemaps, SiInstagram } from 'react-icons/si'
+import ProfileImageUpload from './ProfileImageUpload.jsx'
 
 const ORDERS_PER_PAGE = 25
 
@@ -248,6 +249,20 @@ export default function AdminDashboard() {
     } catch (requestError) { notify(requestError.message, 'error') }
     finally { setPageSaving(false) }
   }
+  async function uploadPagePhoto(imageData) {
+    if (!selectedPage) throw new Error('Create the page before adding its photo.')
+    const result = await requestJson(`/api/admin/pages/${selectedPage.id}/photo`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ imageData }) })
+    setPageForm((current) => ({ ...current, photoUrl:result.photoUrl }))
+    setPages((current) => current.map((page) => page.id === selectedPage.id ? { ...page, photo_url:result.photoUrl } : page))
+    notify('Profile photo updated.')
+  }
+  async function removePagePhoto() {
+    if (!selectedPage) return
+    await requestJson(`/api/admin/pages/${selectedPage.id}/photo`, { method:'DELETE' })
+    setPageForm((current) => ({ ...current, photoUrl:'' }))
+    setPages((current) => current.map((page) => page.id === selectedPage.id ? { ...page, photo_url:null } : page))
+    notify('Profile photo removed.', 'warning')
+  }
 
   async function patchOrder(body, orderId = selected.id) {
     const result = await requestJson(`/api/admin/orders/${orderId}`, { method:'PATCH', headers:{ 'content-type':'application/json' }, body:JSON.stringify(body) })
@@ -365,7 +380,7 @@ export default function AdminDashboard() {
           <label>Linked paid order<select value={pageForm.orderId} onChange={(event) => setPageForm({ ...pageForm, orderId:event.target.value })}><option value="">No linked order</option>{paidOrders.filter((order) => !pages.some((page) => page.order_id === order.id) || selectedPage?.order_id === order.id).map((order) => <option value={order.id} key={order.id}>{order.order_number} · {order.customer_name}</option>)}</select></label>
           <div><label>Display name<input value={pageForm.displayName} maxLength="100" required onChange={(event) => setPageForm({ ...pageForm, displayName:event.target.value })}/></label><label>Role or headline<input value={pageForm.headline} maxLength="120" onChange={(event) => setPageForm({ ...pageForm, headline:event.target.value })}/></label></div>
           <label>Short introduction<textarea value={pageForm.bio} maxLength="360" onChange={(event) => setPageForm({ ...pageForm, bio:event.target.value })}/></label>
-          <label>Profile image URL<input type="url" placeholder="https://" value={pageForm.photoUrl} onChange={(event) => setPageForm({ ...pageForm, photoUrl:event.target.value })}/></label>
+          <ProfileImageUpload value={pageForm.photoUrl} disabled={!selectedPage} onUpload={uploadPagePhoto} onRemove={removePagePhoto}/>
           <div><label>Email<input type="email" value={pageForm.email} onChange={(event) => setPageForm({ ...pageForm, email:event.target.value })}/></label><label>Phone<input value={pageForm.phone} onChange={(event) => setPageForm({ ...pageForm, phone:event.target.value })}/></label></div>
           <label>Location<input value={pageForm.location} onChange={(event) => setPageForm({ ...pageForm, location:event.target.value })}/></label>
           <div><label>Accent<select value={pageForm.accent} onChange={(event) => setPageForm({ ...pageForm, accent:event.target.value })}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Background design<select value={pageForm.backgroundTexture} onChange={(event) => setPageForm({ ...pageForm, backgroundTexture:event.target.value })}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>

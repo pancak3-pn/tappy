@@ -108,6 +108,37 @@ function customerPageFields(body) {
   return pageFields(Object.fromEntries(Object.entries(body || {}).filter(([key]) => allowed.has(key))), true)
 }
 function hashEditToken(token) { return createHash('sha256').update(token).digest('hex') }
+function profileImagePath(photoUrl) {
+  if (!photoUrl) return null
+  try {
+    const marker = '/storage/v1/object/public/profile-images/'
+    const pathname = new URL(photoUrl).pathname
+    return pathname.includes(marker) ? decodeURIComponent(pathname.split(marker)[1]) : null
+  } catch { return null }
+}
+function profileImageData(value) {
+  const match = typeof value === 'string' && value.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/)
+  if (!match) throw new Error('Choose a valid JPG, PNG, or WebP image.')
+  const image = Buffer.from(match[2], 'base64')
+  if (!image.length || image.length > 3_145_728) throw new Error('Profile image must be smaller than 3 MB.')
+  const isJpeg = image.length >= 3 && image[0] === 0xff && image[1] === 0xd8 && image[2] === 0xff
+  const isPng = image.length >= 8 && image.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))
+  const isWebp = image.length >= 12 && image.subarray(0, 4).toString('ascii') === 'RIFF' && image.subarray(8, 12).toString('ascii') === 'WEBP'
+  if ((match[1] === 'image/jpeg' && !isJpeg) || (match[1] === 'image/png' && !isPng) || (match[1] === 'image/webp' && !isWebp)) throw new Error('The selected file is not a valid image.')
+  return { image, contentType:match[1], extension:match[1] === 'image/jpeg' ? 'jpg' : match[1].split('/')[1] }
+}
+async function uploadProfileImage(pageId, imageData) {
+  const { image, contentType, extension } = profileImageData(imageData)
+  const path = `${pageId}/${randomUUID()}.${extension}`
+  const { error } = await supabase.storage.from('profile-images').upload(path, image, { contentType, upsert:false, cacheControl:'31536000' })
+  if (error) throw new Error('Profile image storage is not configured. Run migration 013.')
+  const { data } = supabase.storage.from('profile-images').getPublicUrl(path)
+  return { path, photoUrl:data.publicUrl }
+}
+async function removeProfileImage(photoUrl) {
+  const path = profileImagePath(photoUrl)
+  if (path) await supabase.storage.from('profile-images').remove([path])
+}
 function pageFields(body, partial = false) {
   const update = {}
   const assign = (key, value) => { if (!partial || body[key] !== undefined) update[key] = value }
@@ -331,6 +362,31 @@ async function requestHandler(request, response) {
         return send(response, 201, { page:data })
       } catch { return send(response, 400, { error:'Invalid page details.' }) }
     }
+    const pagePhotoMatch = url.pathname.match(/^\/api\/admin\/pages\/([0-9a-f-]{36})\/photo$/i)
+    if (pagePhotoMatch && ['POST','DELETE'].includes(request.method)) {
+      const { data:page, error:pageError } = await supabase.from('tappy_pages').select('id,photo_url').eq('id', pagePhotoMatch[1]).maybeSingle()
+      if (pageError || !page) return send(response, 404, { error:'Tappy Page not found.' })
+      if (request.method === 'DELETE') {
+        const { error:updateError } = await supabase.from('tappy_pages').update({ photo_url:null }).eq('id', page.id)
+        if (updateError) return send(response, 503, { error:'Profile photo could not be removed.' })
+        await removeProfileImage(page.photo_url)
+        return send(response, 200, { photoUrl:null })
+      }
+      let uploaded
+      try {
+        const body = await readJson(request, 4_400_000)
+        uploaded = await uploadProfileImage(page.id, body.imageData)
+        const { error:updateError } = await supabase.from('tappy_pages').update({ photo_url:uploaded.photoUrl }).eq('id', page.id)
+        if (updateError) {
+          await supabase.storage.from('profile-images').remove([uploaded.path])
+          return send(response, 503, { error:'Profile photo could not be saved.' })
+        }
+        await removeProfileImage(page.photo_url)
+        return send(response, 200, { photoUrl:uploaded.photoUrl })
+      } catch (error) {
+        return send(response, error.message?.includes('3 MB') ? 413 : 400, { error:error.message || 'Invalid profile image.' })
+      }
+    }
     const pageMatch = url.pathname.match(/^\/api\/admin\/pages\/([0-9a-f-]{36})$/i)
     if (request.method === 'PATCH' && pageMatch) {
       try {
@@ -528,6 +584,42 @@ async function requestHandler(request, response) {
       .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
     if (error || !data) return send(response, 404, { error:'Page not found.' })
     return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', links:data.links, updated_at:data.updated_at } })
+  }
+
+  const customerPhotoMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})\/photo$/)
+  if (customerPhotoMatch && ['POST','DELETE'].includes(request.method)) {
+    if (!rateLimit(`page-photo:${clientIp(request)}`, 30, 60 * 60 * 1000)) return send(response, 429, { error:'Too many photo requests. Try again later.' })
+    const tokenHash = hashEditToken(customerPhotoMatch[1])
+    const { data:access, error:accessError } = await supabase.from('page_edit_tokens').select('id,page_id,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle()
+    if (accessError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
+    if (!access || access.revoked_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This editing link is invalid or expired.' })
+    const { data:page, error:pageError } = await supabase.from('tappy_pages').select('*').eq('id', access.page_id).single()
+    if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
+    const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, links:page.links }
+    const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
+    if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
+    if (request.method === 'DELETE') {
+      const { error:updateError } = await supabase.from('tappy_pages').update({ photo_url:null }).eq('id', page.id)
+      if (updateError) return send(response, 503, { error:'Your photo could not be removed.' })
+      await removeProfileImage(page.photo_url)
+      await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
+      return send(response, 200, { photoUrl:null })
+    }
+    try {
+      const body = await readJson(request, 4_400_000)
+      const uploaded = await uploadProfileImage(page.id, body.imageData)
+      const { error:updateError } = await supabase.from('tappy_pages').update({ photo_url:uploaded.photoUrl }).eq('id', page.id)
+      if (updateError) {
+        await supabase.storage.from('profile-images').remove([uploaded.path])
+        return send(response, 503, { error:'Your photo could not be saved.' })
+      }
+      await removeProfileImage(page.photo_url)
+      await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
+      return send(response, 200, { photoUrl:uploaded.photoUrl })
+    } catch (error) {
+      Sentry.captureException(error, { tags:{ operation:'customer_photo_upload' } })
+      return send(response, error.message?.includes('3 MB') ? 413 : 400, { error:error.message || 'Invalid profile image.' })
+    }
   }
 
   const customerEditMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})$/)

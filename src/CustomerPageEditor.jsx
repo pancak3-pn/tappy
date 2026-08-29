@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowSquareOut, CheckCircle } from '@phosphor-icons/react'
+import ProfileImageUpload from './ProfileImageUpload.jsx'
 
 const types = [['website','Website'],['maps','Google Maps'],['facebook','Facebook'],['instagram','Instagram'],['linkedin','LinkedIn'],['reviews','Google Reviews'],['portfolio','Portfolio'],['booking','Booking']]
 const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', backgroundTexture:page.background_texture || 'clean', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
@@ -31,13 +32,27 @@ export default function CustomerPageEditor({ token }) {
       window.setTimeout(() => setState('ready'), 2600)
     } catch (error) { setState('ready'); setMessage(error.message) }
   }
+  async function uploadPhoto(imageData) {
+    const response = await fetch(`/api/pages/edit/${token}/photo`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ imageData }) })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Your photo could not be uploaded.')
+    setForm((current) => ({ ...current, photoUrl:result.photoUrl }))
+    setMessage('Your profile photo is updated.')
+  }
+  async function removePhoto() {
+    const response = await fetch(`/api/pages/edit/${token}/photo`, { method:'DELETE' })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Your photo could not be removed.')
+    setForm((current) => ({ ...current, photoUrl:'' }))
+    setMessage('Your profile photo is removed.')
+  }
 
   if (state === 'loading') return <main className="customer-editor-state"><b>tappy.</b><p>Opening your page editor...</p></main>
   if (state === 'error') return <main className="customer-editor-state"><b>tappy.</b><h1>Link unavailable.</h1><p>{message}</p><a href="mailto:hello@tappycard.tech">Contact Tappy</a></main>
   return <main className="customer-editor"><header><a href="/">tappy.</a>{publicId && <a href={`/p/${publicId}`} target="_blank" rel="noreferrer">View page <ArrowSquareOut size={17}/></a>}</header><div className="customer-editor-layout"><section><span>Private page editor</span><h1>Make it yours.</h1><p>Changes publish as soon as you save. Your private editing link should not be shared.</p></section><form onSubmit={save}>
     <div><label>Display name<input required maxLength="100" value={form.displayName} onChange={(e) => setForm({ ...form, displayName:e.target.value })}/></label><label>Role or headline<input maxLength="120" value={form.headline} onChange={(e) => setForm({ ...form, headline:e.target.value })}/></label></div>
     <label>Short introduction<textarea maxLength="360" value={form.bio} onChange={(e) => setForm({ ...form, bio:e.target.value })}/></label>
-    <label>Profile image URL<input type="url" placeholder="https://" value={form.photoUrl} onChange={(e) => setForm({ ...form, photoUrl:e.target.value })}/></label>
+    <ProfileImageUpload value={form.photoUrl} onUpload={uploadPhoto} onRemove={removePhoto}/>
     <div><label>Public email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email:e.target.value })}/></label><label>Phone<input value={form.phone} onChange={(e) => setForm({ ...form, phone:e.target.value })}/></label></div>
     <label>Location<input maxLength="140" value={form.location} onChange={(e) => setForm({ ...form, location:e.target.value })}/></label>
     <div><label>Accent<select value={form.accent} onChange={(e) => setForm({ ...form, accent:e.target.value })}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => setForm({ ...form, backgroundTexture:e.target.value })}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
