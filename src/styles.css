@@ -205,9 +205,11 @@ h3 { text-wrap:balance; }
 .form-fields { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
 .form-fields label { display:flex; flex-direction:column; gap:8px; color:#4e4e49; font-size:.76rem; font-weight:650; }
 .form-fields label.wide { grid-column:1/-1; }
-.form-fields input { width:100%; min-height:50px; padding:0 14px; border:1px solid var(--soft-line); border-radius:10px; background:#faf9f6; color:var(--ink); font:inherit; font-size:.95rem; outline:none; }
-.form-fields input:focus { border-color:#a8c5b8; box-shadow:0 0 0 3px rgb(168 197 184 / .14); }
-.form-fields input[aria-invalid="true"] { border-color:#b43c33; box-shadow:0 0 0 3px rgb(180 60 51 / .1); }
+.form-fields input,.form-fields select { width:100%; min-height:50px; padding:0 14px; border:1px solid var(--soft-line); border-radius:10px; background:#faf9f6; color:var(--ink); font:inherit; font-size:.95rem; outline:none; }
+.form-fields select { cursor:pointer; }
+.form-fields input:focus,.form-fields select:focus { border-color:#a8c5b8; box-shadow:0 0 0 3px rgb(168 197 184 / .14); }
+.form-fields input[aria-invalid="true"],.form-fields select[aria-invalid="true"] { border-color:#b43c33; box-shadow:0 0 0 3px rgb(180 60 51 / .1); }
+.delivery-region-note { color:var(--forest); font-size:.7rem; font-weight:650; }
 .field-error { margin-top:-2px; color:#a3332b; font-size:.72rem; font-weight:600; line-height:1.35; }
 .payment-choice { margin:30px 0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:10px; border:0; }
 .payment-choice legend { width:100%; margin-bottom:12px; color:#4e4e49; font-size:.76rem; font-weight:650; }
@@ -505,6 +507,11 @@ body:has(.not-found) { padding-top:0; }
 .admin-index td>em[data-status="processing"],.admin-index td>em[data-status="shipped"] { background:#e4ebf5; color:#315b92; }
 .admin-index .numeric { text-align:right; }
 .admin-index-empty { margin:0; padding:54px 20px; color:var(--muted); font-size:.78rem; text-align:center; }
+.admin-pagination { min-height:56px; padding:0 18px; display:flex; align-items:center; justify-content:space-between; gap:14px; border-top:1px solid #deddd8; }
+.admin-pagination span { color:var(--muted); font-size:.66rem; font-weight:600; }
+.admin-pagination button { min-height:32px; padding:0 14px; border:1px solid #d4d3ce; border-radius:8px; background:white; color:var(--ink); font-size:.66rem; font-weight:700; cursor:pointer; }
+.admin-pagination button:hover:not(:disabled) { border-color:var(--ink); }
+.admin-pagination button:disabled { opacity:.4; cursor:not-allowed; }
 .admin-resource-detail { width:min(1120px,100%); }
 .admin-back { margin:0 0 12px; padding:6px 0; border:0; background:transparent; color:#3f5e50; font-size:.7rem; font-weight:620; text-transform:capitalize; cursor:pointer; }
 .admin-back:hover { text-decoration:underline; }
@@ -924,7 +931,7 @@ body:has(.not-found) { padding-top:0; }
   .order-page .form-fields label,
   .order-page .payment-choice legend { color:#4e4e49; }
   .order-page .form-fields label { min-width:0; }
-  .order-page .form-fields input { min-width:0; min-height:52px; border-color:var(--soft-line); background:#faf9f6; color:var(--ink); }
+  .order-page .form-fields input,.order-page .form-fields select { min-width:0; min-height:52px; border-color:var(--soft-line); background:#faf9f6; color:var(--ink); }
   .order-page .payment-choice { margin:26px 0 18px; }
   .order-page .payment-choice label { min-height:72px; border-color:var(--soft-line); background:#fff; }
   .order-page .payment-choice label:has(input:checked) { border-color:var(--forest); background:#edf3ef; box-shadow:inset 3px 0 var(--forest); }
@@ -996,7 +1003,7 @@ body:has(.not-found) { padding-top:0; }
   .managed-page-shell { width:100%; min-height:100dvh; padding:22px 18px max(24px,env(safe-area-inset-bottom)); border:0; border-radius:0; box-shadow:none; }
   .managed-page-profile { margin-top:52px; }
   .managed-page-shell>footer { padding-top:44px; }
-  .form-fields input,.admin-login input,.admin-update input,.admin-update select,.admin-update textarea,.admin-title select,.admin-controls input,.admin-topbar input { font-size:16px; }
+  .form-fields input,.form-fields select,.admin-login input,.admin-update input,.admin-update select,.admin-update textarea,.admin-title select,.admin-controls input,.admin-topbar input { font-size:16px; }
   .footer-reveal { height:auto; }
   .footer-stack { position:relative; top:auto; height:auto; overflow:visible; }
   .footer-reveal .footer { position:relative; inset:auto; min-height:auto; padding:48px 0 22px; clip-path:none !important; background:var(--ink); color:var(--paper); will-change:auto; }

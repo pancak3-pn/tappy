@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -11,12 +12,36 @@ if (!supabaseUrl || !supabaseSecretKey) {
 
 const supabase = createClient(supabaseUrl, supabaseSecretKey, { auth:{ autoRefreshToken:false, persistSession:false, detectSessionInUrl:false } })
 const adminPassword = process.env.ADMIN_PASSWORD || ''
-const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET || supabaseSecretKey
+const adminTokenSecret = process.env.ADMIN_TOKEN_SECRET
+if (!adminTokenSecret) {
+  console.error('Missing ADMIN_TOKEN_SECRET. Add a long random secret to .env (it must differ from SUPABASE_SECRET_KEY).')
+  process.exit(1)
+}
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailFrom = process.env.EMAIL_FROM || 'Tappy <orders@example.com>'
 const unitPrice = 199
-const shippingFee = 80
 const allowedPayments = new Set(['gcash'])
+
+// Simple in-memory rate limiter. On Vercel each warm instance keeps its own
+// counters, which still blunts bursts; pair with Vercel WAF or Upstash Redis
+// for strict global limits.
+const rateBuckets = new Map()
+function clientIp(request) {
+  const forwarded = request.headers['x-forwarded-for']
+  if (typeof forwarded === 'string' && forwarded.length) return forwarded.split(',')[0].trim()
+  return request.socket?.remoteAddress || 'unknown'
+}
+function rateLimit(key, limit, windowMs) {
+  const now = Date.now()
+  let bucket = rateBuckets.get(key)
+  if (!bucket || now >= bucket.resetAt) {
+    if (rateBuckets.size > 5000) for (const [entryKey, entry] of rateBuckets) if (now >= entry.resetAt) rateBuckets.delete(entryKey)
+    bucket = { count:0, resetAt:now + windowMs }
+    rateBuckets.set(key, bucket)
+  }
+  bucket.count += 1
+  return bucket.count <= limit
+}
 
 function send(response, status, payload) {
   response.writeHead(status, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' })
@@ -91,7 +116,7 @@ async function deliverEmail({ to, subject, html, text, idempotencyKey }) {
 
 async function sendOrderConfirmation(order) {
   if (!resendApiKey) return { status:'not_configured', id:null }
-  const address = `${order.address}, ${order.city} ${order.postal}`
+  const address = `${order.address}, ${order.city}, ${order.province} ${order.postal}`
   return deliverEmail({
     to:order.email,
     subject:`Order received - payment required - ${order.orderNumber}`,
@@ -105,7 +130,7 @@ async function sendOrderConfirmation(order) {
       message:'We received and reserved your order. Complete the GCash QR payment and submit your receipt, then wait for our payment verification email. Once approved, we will prepare your order for delivery.',
       rows:[
         [`White Tappy card × ${order.quantity}`, `&#8369;${order.quantity * unitPrice}`],
-        ['Delivery', `&#8369;${shippingFee}`],
+        [`Delivery (${escapeHtml(order.deliveryRegion)})`, `&#8369;${order.shippingFee}`],
         ['Total', `&#8369;${order.total}`, true],
         ['Deliver to', escapeHtml(address)],
       ],
@@ -231,6 +256,7 @@ export async function handler(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/api/admin/login') {
     if (!adminPassword) return send(response, 503, { error:'Admin access is not configured. Add ADMIN_PASSWORD to .env.' })
+    if (!rateLimit(`login:${clientIp(request)}`, 5, 15 * 60 * 1000)) return send(response, 429, { error:'Too many sign-in attempts. Try again in 15 minutes.' })
     try {
       const body = await readJson(request)
       if (!safeEqual(clean(body.password, 200), adminPassword)) return send(response, 401, { error:'Incorrect password.' })
@@ -330,11 +356,32 @@ export async function handler(request, response) {
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/orders') {
       const status = clean(url.searchParams.get('status'), 40)
-      let query = supabase.from('orders').select('*').order('created_at', { ascending:false }).limit(100)
-      if (status && status !== 'all') query = query.eq('order_status', status)
-      const { data, error } = await query
+      const search = clean(url.searchParams.get('q'), 60).replace(/[,()%]/g, ' ').trim()
+      const paidOnly = url.searchParams.get('paid') === '1'
+      const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get('limit'), 10) || 25, 1), 100)
+      const page = Math.max(Number.parseInt(url.searchParams.get('page'), 10) || 1, 1)
+      const from = (page - 1) * limit
+      let query = supabase.from('orders').select('*', { count:'exact' }).order('created_at', { ascending:false }).range(from, from + limit - 1)
+      if (paidOnly) query = query.eq('payment_status', 'paid')
+      else if (status === 'payment_review') query = query.eq('payment_status', 'proof_submitted')
+      else if (status === 'in_progress') query = query.in('order_status', ['processing', 'shipped'])
+      else if (status === 'to_fulfill') query = query.eq('order_status', 'pending_fulfillment')
+      else if (status === 'completed') query = query.eq('order_status', 'delivered')
+      else if (status === 'cancelled') query = query.eq('order_status', 'cancelled')
+      if (search) query = query.or(`order_number.ilike.%${search}%,customer_name.ilike.%${search}%,email.ilike.%${search}%`)
+      const { data, error, count } = await query
       if (error) return send(response, 503, { error:'Orders could not be loaded.' })
-      return send(response, 200, { orders:data })
+      const total = count ?? 0
+      return send(response, 200, { orders:data, total, page, limit, totalPages:Math.max(1, Math.ceil(total / limit)) })
+    }
+    if (request.method === 'GET' && url.pathname === '/api/admin/order-counts') {
+      const [unread, payment, fulfillment] = await Promise.all([
+        supabase.from('orders').select('id', { head:true, count:'exact' }).is('admin_read_at', null),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).eq('payment_status', 'proof_submitted'),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).in('order_status', ['pending_fulfillment', 'processing']),
+      ])
+      if (unread.error || payment.error || fulfillment.error) return send(response, 503, { error:'Order counts could not be loaded.' })
+      return send(response, 200, { counts:{ unread:unread.count ?? 0, payment:payment.count ?? 0, fulfillment:fulfillment.count ?? 0 } })
     }
     const proofMatch = url.pathname.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/payment-proof$/i)
     if (request.method === 'GET' && proofMatch) {
@@ -414,14 +461,14 @@ export async function handler(request, response) {
     const orderNumber = proofSubmission[1]
     if (!isOrderToken(request, orderNumber)) return send(response, 401, { error:'This payment session expired. Contact Tappy with your order number.' })
     try {
-      const body = await readJson(request, 5_700_000)
+      const body = await readJson(request, 4_400_000)
       const reference = clean(body.reference, 100).replace(/\s+/g, '')
       const senderName = clean(body.senderName, 100)
       const senderPhone = clean(body.senderPhone, 32)
       const receiptMatch = typeof body.receiptData === 'string' && body.receiptData.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/)
       if (reference.length < 6 || !senderName || !senderPhone || !receiptMatch) return send(response, 400, { error:'Add the GCash reference, sender details, and a valid receipt image.' })
       const receipt = Buffer.from(receiptMatch[2], 'base64')
-      if (!receipt.length || receipt.length > 4_194_304) return send(response, 413, { error:'Receipt image must be smaller than 4 MB.' })
+      if (!receipt.length || receipt.length > 3_145_728) return send(response, 413, { error:'Receipt image must be smaller than 3 MB.' })
       const { data:order, error:orderError } = await supabase.from('orders').select('id,payment_status,payment_proof_path').eq('order_number', orderNumber).single()
       if (orderError || !order) return send(response, 404, { error:'Order not found.' })
       if (order.payment_status === 'paid') return send(response, 409, { error:'This order is already marked as paid.' })
@@ -446,30 +493,36 @@ export async function handler(request, response) {
       if (order.payment_proof_path) await supabase.storage.from('payment-proofs').remove([order.payment_proof_path])
       return send(response, 200, { paymentStatus:data.payment_status, submittedAt:data.payment_proof_submitted_at })
     } catch (error) {
-      return send(response, error.message === 'Payload too large' ? 413 : 400, { error:error.message === 'Payload too large' ? 'Receipt image must be smaller than 4 MB.' : 'Invalid payment proof.' })
+      return send(response, error.message === 'Payload too large' ? 413 : 400, { error:error.message === 'Payload too large' ? 'Receipt image must be smaller than 3 MB.' : 'Invalid payment proof.' })
     }
   }
 
   if (request.method !== 'POST' || url.pathname !== '/api/orders') return send(response, 404, { error:'Not found' })
+  if (!rateLimit(`orders:${clientIp(request)}`, 10, 60 * 60 * 1000)) return send(response, 429, { error:'Too many orders submitted from this connection. Please try again later.' })
 
   try {
     const body = await readJson(request)
     const order = {
       name:clean(body.name, 100), email:clean(body.email, 160).toLowerCase(), phone:clean(body.phone, 32),
-      address:clean(body.address, 220), city:clean(body.city, 100), postal:clean(body.postal, 16),
+      address:clean(body.address, 220), city:clean(body.city, 100), province:clean(body.province, 100), postal:clean(body.postal, 16),
       payment:clean(body.payment, 16), quantity:Number(body.quantity),
     }
-    if (!order.name || !order.email.includes('@') || !order.phone || !order.address || !order.city || !order.postal) return send(response, 400, { error:'Complete all customer and delivery fields.' })
+    if (!order.name || !order.email.includes('@') || !order.phone || !order.address || !order.city || !order.province || !order.postal) return send(response, 400, { error:'Complete all customer and delivery fields.' })
     if (!Number.isInteger(order.quantity) || order.quantity < 1 || order.quantity > 10) return send(response, 400, { error:'Quantity must be between 1 and 10.' })
     if (!allowedPayments.has(order.payment)) return send(response, 400, { error:'Choose a valid payment method.' })
 
+    const deliveryRegion = getDeliveryRegion(order.province)
+    const shippingFee = getDeliveryFee(order.province)
+    if (!deliveryRegion || shippingFee == null) return send(response, 400, { error:'Choose a supported Philippine province.' })
+    order.deliveryRegion = deliveryRegion
+    order.shippingFee = shippingFee
     const orderNumber = createOrderNumber()
     const total = order.quantity * unitPrice + shippingFee
     const paymentStatus = 'awaiting_payment'
     const orderStatus = 'pending_payment_verification'
     const { data, error } = await supabase.from('orders').insert({
       order_number:orderNumber, customer_name:order.name, email:order.email, phone:order.phone,
-      address:order.address, city:order.city, postal_code:order.postal, quantity:order.quantity,
+      address:order.address, city:order.city, province:order.province, delivery_region:deliveryRegion, postal_code:order.postal, quantity:order.quantity,
       unit_price:unitPrice, shipping_fee:shippingFee, total, payment_method:order.payment,
       payment_status:paymentStatus, order_status:orderStatus,
     }).select('id,order_number,total,payment_method,payment_status,order_status,created_at').single()

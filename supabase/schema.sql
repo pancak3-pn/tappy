@@ -8,6 +8,8 @@ create table if not exists public.orders (
   phone text not null check (char_length(phone) <= 32),
   address text not null check (char_length(address) <= 220),
   city text not null check (char_length(city) <= 100),
+  province text,
+  delivery_region text check (delivery_region is null or delivery_region in ('Luzon', 'Visayas', 'Mindanao')),
   postal_code text not null check (char_length(postal_code) <= 16),
   quantity integer not null check (quantity between 1 and 10),
   unit_price integer not null check (unit_price >= 0),

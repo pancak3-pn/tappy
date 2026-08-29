@@ -5,6 +5,7 @@
 .public-masthead>.legal-effective-date{display:inline-flex;align-items:center;gap:11px;margin-top:34px;padding:10px 14px;border:1px solid color-mix(in srgb,var(--forest) 24%,transparent);border-radius:8px;background:color-mix(in srgb,var(--forest) 9%,var(--paper));font-family:var(--font-sans);letter-spacing:0;text-transform:none}
 .legal-effective-date small{color:var(--forest);font-size:.72rem;font-weight:650}
 .legal-effective-date strong{font-size:.82rem;font-weight:720}
+.legal-copy p>a{color:var(--forest);font-weight:620;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
 .page.public-page{min-height:100dvh;overflow:visible;background:var(--paper);color:var(--ink)}
 .legal-contents{position:sticky;top:104px;align-self:start;height:max-content;max-height:calc(100dvh - 128px);padding-right:14px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--soft-line) transparent}.legal-contents a{width:fit-content;max-width:100%;padding:8px 0;line-height:1.35;transform:none}.legal-contents a::before{display:none}.legal-contents a::after{content:'';position:absolute;left:0;right:0;bottom:3px;height:1px;background:var(--forest);transform:scaleX(0);transform-origin:left;transition:transform .22s ease}.legal-contents a:hover,.legal-contents a.active{transform:none}.legal-contents a.active::after{transform:scaleX(1)}
 .legal-contents-rail{min-width:0;align-self:stretch}.legal-contents-rail .legal-contents{position:sticky;top:104px;align-self:auto}

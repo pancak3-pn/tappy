@@ -6,8 +6,9 @@ import AdminDashboard from './AdminDashboard'
 import TappyPage from './TappyPage'
 import PublicPage from './PublicPages'
 import { track } from './analytics'
+import { DELIVERY_PROVINCES, getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import {
-  ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
+  ArrowLeft, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
   InstagramLogo, List, MapPin, Phone,
   Minus, Plus, ShareNetwork, ShoppingCartSimple, Star, X,
 } from '@phosphor-icons/react'
@@ -83,7 +84,7 @@ function Hero() {
         </div>
         <div className="hero-mockup" aria-label="Tappy NFC card next to a smartphone showing a digital profile">
           <div className="hero-image-stage">
-            <video src="/assets/video.mp4" autoPlay muted loop playsInline preload="auto" aria-label="A white Tappy NFC card beside a smartphone" />
+<video src="/assets/video.mp4" poster="/assets/tappy-hero.jpg" autoPlay muted loop playsInline preload="auto" aria-label="A white Tappy NFC card beside a smartphone" />
           </div>
         </div>
       </div>
@@ -238,7 +239,7 @@ function Pricing() {
 function OrderFlow() {
   const [step, setStep] = useState(1)
   const [quantity, setQuantity] = useState(1)
-  const [details, setDetails] = useState({ name:'', email:'', phone:'', address:'', city:'', postal:'', payment:'gcash' })
+  const [details, setDetails] = useState({ name:'', email:'', phone:'', address:'', city:'', province:'', postal:'', payment:'gcash' })
   const [fieldErrors, setFieldErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -248,7 +249,8 @@ function OrderFlow() {
   const [proofSubmitting, setProofSubmitting] = useState(false)
   const [proofError, setProofError] = useState('')
   const [proofSubmitted, setProofSubmitted] = useState(false)
-  const shipping = 80
+  const shipping = getDeliveryFee(details.province) ?? 0
+  const deliveryRegion = getDeliveryRegion(details.province)
   const total = quantity * 199 + shipping
   const update = (event) => {
     const { name, value } = event.target
@@ -263,6 +265,7 @@ function OrderFlow() {
     if (!/^(09\d{9}|\+639\d{9})$/.test(phoneDigits)) errors.phone = 'Use 09XXXXXXXXX or +639XXXXXXXXX.'
     if (details.address.trim().length < 5) errors.address = 'Enter the complete delivery address.'
     if (details.city.trim().length < 2) errors.city = 'Enter the city or municipality.'
+    if (!deliveryRegion) errors.province = 'Choose the delivery province.'
     if (!/^\d{4}$/.test(details.postal.trim())) errors.postal = 'Enter a 4-digit Philippine postal code.'
     return errors
   }
@@ -299,7 +302,7 @@ function OrderFlow() {
     setProofError('')
     if (!receiptFile) return setProofError('Add a screenshot of your GCash receipt.')
     if (!['image/jpeg','image/png','image/webp'].includes(receiptFile.type)) return setProofError('Use a JPG, PNG, or WebP receipt image.')
-    if (receiptFile.size > 4_194_304) return setProofError('Receipt image must be smaller than 4 MB.')
+    if (receiptFile.size > 3_145_728) return setProofError('Receipt image must be smaller than 3 MB.')
     setProofSubmitting(true)
     try {
       const receiptData = await new Promise((resolve, reject) => {
@@ -333,15 +336,16 @@ function OrderFlow() {
               <label>Mobile number<input type="tel" name="phone" inputMode="tel" autoComplete="tel" placeholder="09XX XXX XXXX" value={details.phone} onChange={update} aria-invalid={Boolean(fieldErrors.phone)} aria-describedby={fieldErrors.phone ? 'phone-error' : undefined} required />{fieldErrors.phone && <span className="field-error" id="phone-error">{fieldErrors.phone}</span>}</label>
               <label className="wide">Delivery address<input name="address" autoComplete="street-address" value={details.address} onChange={update} aria-invalid={Boolean(fieldErrors.address)} aria-describedby={fieldErrors.address ? 'address-error' : undefined} required />{fieldErrors.address && <span className="field-error" id="address-error">{fieldErrors.address}</span>}</label>
               <label>City or municipality<input name="city" autoComplete="address-level2" value={details.city} onChange={update} aria-invalid={Boolean(fieldErrors.city)} aria-describedby={fieldErrors.city ? 'city-error' : undefined} required />{fieldErrors.city && <span className="field-error" id="city-error">{fieldErrors.city}</span>}</label>
+              <label>Province<select name="province" autoComplete="address-level1" value={details.province} onChange={update} aria-invalid={Boolean(fieldErrors.province)} aria-describedby={fieldErrors.province ? 'province-error' : undefined} required><option value="">Select province</option>{DELIVERY_PROVINCES.map(({ name }) => <option value={name} key={name}>{name}</option>)}</select>{fieldErrors.province && <span className="field-error" id="province-error">{fieldErrors.province}</span>}{deliveryRegion && <small className="delivery-region-note">{deliveryRegion} delivery · ₱{shipping}</small>}</label>
               <label>Postal code<input name="postal" inputMode="numeric" autoComplete="postal-code" maxLength="4" value={details.postal} onChange={update} aria-invalid={Boolean(fieldErrors.postal)} aria-describedby={fieldErrors.postal ? 'postal-error' : undefined} required />{fieldErrors.postal && <span className="field-error" id="postal-error">{fieldErrors.postal}</span>}</label>
             </div>
             <div className="payment-only"><span>Payment method</span><div className="payment-method"><i aria-hidden="true"><img src="/assets/gcash-mark.svg" alt="" width="24" height="20" /></i><span><b>GCash QR payment</b><small>Payment is required before your order is fulfilled.</small></span></div></div>
             <button className="button order-next" type="submit">Review order</button>
           </form>}
-          {step === 2 && <div className="order-review"><button className="order-back" type="button" onClick={() => setStep(1)}><ArrowLeft size={17}/> Edit details</button><h3>Check everything.</h3><dl><div><dt>Deliver to</dt><dd>{details.name}<br/>{details.address}, {details.city} {details.postal}<br/>{details.phone}</dd></div><div><dt>Updates</dt><dd>{details.email}</dd></div><div><dt>Payment</dt><dd>GCash QR payment</dd></div></dl><button className="button order-next" type="button" onClick={placeOrder} disabled={submitting}>{submitting ? 'Saving order…' : 'Place order'}</button>{submitError && <p className="order-error" role="alert">{submitError}</p>}<p className="order-note">No wallet credentials are collected. Payment is verified manually before fulfillment.</p></div>}
-          {step === 3 && orderResult && <div className="order-payment"><div className="payment-copy"><span className="payment-status">Order reserved</span><h3>Pay with GCash.</h3><p>Scan the QR using GCash and enter the exact amount shown. Then submit your receipt for verification.</p><dl><div><dt>Amount</dt><dd>₱{total}</dd></div><div><dt>Order</dt><dd>{orderResult.orderNumber}</dd></div></dl>{proofSubmitted ? <div className="proof-success" role="status"><CheckCircle size={24} weight="fill"/><div><b>Payment proof submitted</b><p>Please wait for our verification email before we prepare your order. We’ll also email you if the payment needs attention.</p></div></div> : <form className="payment-proof-form" onSubmit={submitPaymentProof}><label>GCash reference number<input name="reference" inputMode="numeric" value={paymentProof.reference} onChange={(event) => setPaymentProof(current => ({ ...current, reference:event.target.value }))} required/></label><div><label>Sender name<input name="senderName" autoComplete="name" value={paymentProof.senderName} onChange={(event) => setPaymentProof(current => ({ ...current, senderName:event.target.value }))} required/></label><label>Sender mobile number<input name="senderPhone" type="tel" inputMode="tel" autoComplete="tel" value={paymentProof.senderPhone} onChange={(event) => setPaymentProof(current => ({ ...current, senderPhone:event.target.value }))} required/></label></div><label className="receipt-field">Receipt screenshot<input name="receipt" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setReceiptFile(event.target.files?.[0] || null)} required/><small>{receiptFile ? `${receiptFile.name} · ${(receiptFile.size / 1024 / 1024).toFixed(1)} MB` : 'JPG, PNG or WebP · Maximum 4 MB'}</small></label><button className="button" type="submit" disabled={proofSubmitting}>{proofSubmitting ? 'Uploading receipt…' : 'Submit payment proof'}</button>{proofError && <p className="order-error" role="alert">{proofError}</p>}</form>}</div><figure className="payment-qr"><img src="/assets/qr-payment.png" alt="GCash InstaPay QR for Tappy Card" width="232" height="349"/><figcaption>GCash QR · Tappy Card</figcaption></figure></div>}
+          {step === 2 && <div className="order-review"><button className="order-back" type="button" onClick={() => setStep(1)}><ArrowLeft size={17}/> Edit details</button><h3>Check everything.</h3><dl><div><dt>Deliver to</dt><dd>{details.name}<br/>{details.address}, {details.city}, {details.province} {details.postal}<br/>{details.phone}</dd></div><div><dt>Delivery</dt><dd>{deliveryRegion} · ₱{shipping}</dd></div><div><dt>Updates</dt><dd>{details.email}</dd></div><div><dt>Payment</dt><dd>GCash QR payment</dd></div></dl><button className="button order-next" type="button" onClick={placeOrder} disabled={submitting}>{submitting ? 'Saving order…' : 'Place order'}</button>{submitError && <p className="order-error" role="alert">{submitError}</p>}<p className="order-note">No wallet credentials are collected. Payment is verified manually before fulfillment.</p></div>}
+          {step === 3 && orderResult && <div className="order-payment"><div className="payment-copy"><span className="payment-status">Order reserved</span><h3>Pay with GCash.</h3><p>Scan the QR using GCash and enter the exact amount shown. Then submit your receipt for verification.</p><dl><div><dt>Amount</dt><dd>₱{total}</dd></div><div><dt>Order</dt><dd>{orderResult.orderNumber}</dd></div></dl>{proofSubmitted ? <div className="proof-success" role="status"><CheckCircle size={24} weight="fill"/><div><b>Payment proof submitted</b><p>Please wait for our verification email before we prepare your order. We’ll also email you if the payment needs attention.</p></div></div> : <form className="payment-proof-form" onSubmit={submitPaymentProof}><label>GCash reference number<input name="reference" inputMode="numeric" value={paymentProof.reference} onChange={(event) => setPaymentProof(current => ({ ...current, reference:event.target.value }))} required/></label><div><label>Sender name<input name="senderName" autoComplete="name" value={paymentProof.senderName} onChange={(event) => setPaymentProof(current => ({ ...current, senderName:event.target.value }))} required/></label><label>Sender mobile number<input name="senderPhone" type="tel" inputMode="tel" autoComplete="tel" value={paymentProof.senderPhone} onChange={(event) => setPaymentProof(current => ({ ...current, senderPhone:event.target.value }))} required/></label></div><label className="receipt-field">Receipt screenshot<input name="receipt" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setReceiptFile(event.target.files?.[0] || null)} required/><small>{receiptFile ? `${receiptFile.name} · ${(receiptFile.size / 1024 / 1024).toFixed(1)} MB` : 'JPG, PNG or WebP · Maximum 3 MB'}</small></label><button className="button" type="submit" disabled={proofSubmitting}>{proofSubmitting ? 'Uploading receipt…' : 'Submit payment proof'}</button>{proofError && <p className="order-error" role="alert">{proofError}</p>}</form>}</div><figure className="payment-qr"><img src="/assets/qr-payment.png" alt="GCash InstaPay QR for Tappy Card" width="232" height="349"/><figcaption>GCash QR · Tappy Card</figcaption></figure></div>}
         </div>
-        <aside className="order-summary" aria-label="Order summary"><img src="/assets/tappy-hero.jpg" alt="White Tappy NFC card" width="900" height="506"/><div><span>White Tappy card × {quantity}</span><b>₱{quantity * 199}</b></div><div><span>Delivery</span><b>₱{shipping}</b></div><div className="summary-total"><span>Total</span><strong>₱{total}</strong></div></aside>
+        <aside className="order-summary" aria-label="Order summary"><img src="/assets/tappy-hero.jpg" alt="White Tappy NFC card" width="900" height="506"/><div><span>White Tappy card × {quantity}</span><b>₱{quantity * 199}</b></div><div><span>Delivery{deliveryRegion ? ` · ${deliveryRegion}` : ''}</span><b>{deliveryRegion ? `₱${shipping}` : 'Select province'}</b></div><div className="summary-total"><span>Total</span><strong>{deliveryRegion ? `₱${total}` : '—'}</strong></div></aside>
       </div>
     </div>
   </section>
