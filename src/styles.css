@@ -5220,17 +5220,18 @@ body:has(.not-found) {
   font-size: .62rem;
 }
 
-.footer-bottom .fi-ph {
+.footer-made-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-made-in img {
   width: 22px;
-  height: 15px;
-  margin-left: 7px;
-  display: inline-block;
+  height: 17px;
+  display: block;
   flex: 0 0 auto;
   border-radius: 2px;
-  background-size: cover;
-  background-position: center;
-  box-shadow: none;
-  vertical-align: -3px;
 }
 
 .fade {

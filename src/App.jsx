@@ -5,6 +5,7 @@ import { useGSAP } from '@gsap/react'
 import PublicPage from './PublicPages'
 import { track } from './analytics'
 import { DELIVERY_PROVINCES, getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
+import philippineFlag from 'flag-icons/flags/4x3/ph.svg'
 import {
   ArrowLeft, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
   InstagramLogo, List, MapPin, Phone,
@@ -363,7 +364,7 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo /><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/faqs">FAQs</a><a href="/#business">For business</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true" />Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true" />Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines  <span role="img" aria-label="Philippine flag">🇵🇭</span></span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo /><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/faqs">FAQs</a><a href="/#business">For business</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true" />Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true" />Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span className="footer-made-in">Made in the Philippines<img src={philippineFlag} width="22" height="17" alt="Philippine flag"/></span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
