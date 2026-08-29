@@ -17,6 +17,12 @@ function initials(name = '') {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'TP'
 }
 
+function accentTextColor(color) {
+  const value = /^#[0-9a-f]{6}$/i.test(color || '') ? color.slice(1) : '244a3a'
+  const channels = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16) / 255).map((channel) => channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+  return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722 > .45 ? '#151515' : '#ffffff'
+}
+
 export default function ManagedProfileCard({ page, preview = false, footer = true }) {
   const displayName = page.display_name ?? page.displayName ?? ''
   const headline = page.headline || ''
@@ -26,6 +32,7 @@ export default function ManagedProfileCard({ page, preview = false, footer = tru
   const phone = page.phone || ''
   const location = page.location || ''
   const accent = page.accent || 'forest'
+  const accentColor = page.accent_color ?? page.accentColor ?? ({ forest:'#244a3a', ink:'#151515', blue:'#2757a5' }[accent] || '#244a3a')
   const background = page.background_texture ?? page.backgroundTexture ?? 'clean'
   const template = page.template || 'classic'
   const links = (page.links || []).filter((link) => link.url?.trim())
@@ -37,7 +44,7 @@ export default function ManagedProfileCard({ page, preview = false, footer = tru
       : <a key={key} className={className} href={href} aria-label={label} target={target} rel={rel} {...sharedProps}>{children}</a>
   }
 
-  return <div className="managed-page-shell" data-accent={accent} data-background={background} data-template={template} data-preview={preview ? 'true' : undefined}>
+  return <div className="managed-page-shell" style={{ '--page-accent':accentColor, '--page-accent-text':accentTextColor(accentColor) }} data-accent={accent} data-background={background} data-template={template} data-preview={preview ? 'true' : undefined}>
     <header><span className="managed-page-brand">tappy.</span></header>
     <section className="managed-page-profile">
       {photoUrl ? <img src={photoUrl} alt={preview ? '' : displayName} width="112" height="112"/> : <div className="managed-page-initials" aria-hidden="true">{initials(displayName)}</div>}
@@ -51,6 +58,6 @@ export default function ManagedProfileCard({ page, preview = false, footer = tru
         {links.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return action(link.url, link.label, <Icon size={20}/>, '', { key:`${link.url}-${index}`, title:link.label, 'data-link-type':link.type, target:'_blank', rel:'noreferrer' }) })}
       </div>}
     </div>}
-    {footer && <footer><span>{preview ? 'Live page preview' : 'Powered by Tappy'}</span></footer>}
+    {footer && <footer><span>Powered by Tappy</span></footer>}
   </div>
 }

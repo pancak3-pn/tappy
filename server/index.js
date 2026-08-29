@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import { createClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/node'
 import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
+import { managedProfilePayload, normalizeAccentColor, PROFILE_ACCENTS, PROFILE_BACKGROUNDS, PROFILE_TEMPLATES } from '../shared/managed-profile.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -104,7 +105,7 @@ function cleanPageLinks(value) {
   })).filter((link) => link.label && link.url)
 }
 function customerPageFields(body) {
-  const allowed = new Set(['displayName','headline','bio','photoUrl','email','phone','location','accent','backgroundTexture','template','links'])
+  const allowed = new Set(['displayName','headline','bio','email','phone','location','accent','accentColor','backgroundTexture','template','links'])
   return pageFields(Object.fromEntries(Object.entries(body || {}).filter(([key]) => allowed.has(key))), true)
 }
 function hashEditToken(token) { return createHash('sha256').update(token).digest('hex') }
@@ -149,9 +150,10 @@ function pageFields(body, partial = false) {
   assign('email', clean(body.email, 160).toLowerCase() || null)
   assign('phone', clean(body.phone, 32) || null)
   assign('location', clean(body.location, 140) || null)
-  assign('accent', ['forest','ink','blue'].includes(body.accent) ? body.accent : 'forest')
-  assign('backgroundTexture', ['clean','linen','silver','forest-grain','blueprint'].includes(body.backgroundTexture) ? body.backgroundTexture : 'clean')
-  assign('template', ['classic','split','compact'].includes(body.template) ? body.template : 'classic')
+  assign('accent', PROFILE_ACCENTS.includes(body.accent) ? body.accent : 'forest')
+  assign('accentColor', normalizeAccentColor(body.accentColor, body.accent))
+  assign('backgroundTexture', PROFILE_BACKGROUNDS.includes(body.backgroundTexture) ? body.backgroundTexture : 'clean')
+  assign('template', PROFILE_TEMPLATES.includes(body.template) ? body.template : 'classic')
   assign('links', cleanPageLinks(body.links))
   assign('internalNotes', clean(body.internalNotes, 1000) || null)
   assign('orderId', /^[0-9a-f-]{36}$/i.test(body.orderId || '') ? body.orderId : null)
@@ -584,7 +586,7 @@ async function requestHandler(request, response) {
       .select('*')
       .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
     if (error || !data) return send(response, 404, { error:'Page not found.' })
-    return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', template:data.template || 'classic', links:data.links, updated_at:data.updated_at } })
+    return send(response, 200, { page:managedProfilePayload(data) })
   }
 
   const customerPhotoMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})\/photo$/)
@@ -596,7 +598,7 @@ async function requestHandler(request, response) {
     if (!access || access.revoked_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This editing link is invalid or expired.' })
     const { data:page, error:pageError } = await supabase.from('tappy_pages').select('*').eq('id', access.page_id).single()
     if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
-    const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, template:page.template, links:page.links }
+    const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, accent_color:page.accent_color, background_texture:page.background_texture, template:page.template, links:page.links }
     const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
     if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
     if (request.method === 'DELETE') {
@@ -634,20 +636,33 @@ async function requestHandler(request, response) {
     if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
     if (request.method === 'GET') {
       await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
-      return send(response, 200, { page:{ display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links, public_id:page.public_id }, expiresAt:access.expires_at })
+      return send(response, 200, { page:managedProfilePayload(page), expiresAt:access.expires_at })
     }
     try {
-      const body = await readJson(request)
+      const body = await readJson(request, 4_400_000)
       const fields = customerPageFields(body)
+      let uploaded = null
+      const removePhoto = body.removePhoto === true
+      if (body.photoImageData) {
+        uploaded = await uploadProfileImage(page.id, body.photoImageData)
+        fields.photo_url = uploaded.photoUrl
+      } else if (removePhoto) fields.photo_url = null
       if (fields.display_name !== undefined && !fields.display_name) return send(response, 400, { error:'Add a display name.' })
       if (!Object.keys(fields).length) return send(response, 400, { error:'No valid changes supplied.' })
-      const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, template:page.template, links:page.links }
+      const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, accent_color:page.accent_color, background_texture:page.background_texture, template:page.template, links:page.links }
       const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
-      if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
+      if (revisionError) {
+        if (uploaded) await supabase.storage.from('profile-images').remove([uploaded.path])
+        return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
+      }
       const { data:updated, error:updateError } = await supabase.from('tappy_pages').update(fields).eq('id', page.id).select('*').single()
-      if (updateError) return send(response, 503, { error:'Your page could not be updated.' })
+      if (updateError) {
+        if (uploaded) await supabase.storage.from('profile-images').remove([uploaded.path])
+        return send(response, 503, { error:'Your page could not be updated.' })
+      }
+      if ((uploaded || removePhoto) && page.photo_url && page.photo_url !== updated.photo_url) await removeProfileImage(page.photo_url)
       await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
-      return send(response, 200, { page:{ display_name:updated.display_name, headline:updated.headline, bio:updated.bio, photo_url:updated.photo_url, email:updated.email, phone:updated.phone, location:updated.location, accent:updated.accent, background_texture:updated.background_texture, links:updated.links, public_id:updated.public_id } })
+      return send(response, 200, { page:managedProfilePayload(updated) })
     } catch (error) {
       Sentry.captureException(error, { tags:{ operation:'customer_page_update' } })
       return send(response, 400, { error:'Invalid page details.' })

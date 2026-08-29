@@ -17,7 +17,9 @@ function clamp(value, minimum, maximum) { return Math.min(Math.max(value, minimu
 
 export default function ProfileImageUpload({ value, name = 'Profile photo', disabled = false, hint = 'JPG, PNG, or WebP. You can crop it before upload.', onUpload, onRemove, deferred = false, onPendingChange }) {
   const inputRef = useRef(null)
+  const chooseButtonRef = useRef(null)
   const cropRef = useRef(null)
+  const dialogRef = useRef(null)
   const dragRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -33,9 +35,19 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
   useEffect(() => {
     if (!source) return undefined
     const previousOverflow = document.body.style.overflow
-    const closeOnEscape = (event) => { if (event.key === 'Escape' && !busy) closeCrop() }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !busy) closeCrop()
+      if (event.key !== 'Tab') return
+      const focusable = [...(dialogRef.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]') || [])]
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', closeOnEscape)
+    window.requestAnimationFrame(() => dialogRef.current?.querySelector('button')?.focus())
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', closeOnEscape)
@@ -52,6 +64,7 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
     setImageSize({ width:0, height:0 })
     setCrop({ zoom:1, x:0, y:0 })
     dragRef.current = null
+    window.requestAnimationFrame(() => chooseButtonRef.current?.focus())
   }
 
   function cropBounds(zoom = crop.zoom) {
@@ -92,6 +105,17 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
   }
 
   function stopDrag(event) { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null }
+
+  function moveWithKeyboard(event) {
+    if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key) || !imageSize.width || busy) return
+    event.preventDefault()
+    const bounds = cropBounds()
+    const step = event.shiftKey ? 20 : 6
+    setCrop((current) => ({ ...current,
+      x:clamp(current.x + (event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0), -bounds.x, bounds.x),
+      y:clamp(current.y + (event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0), -bounds.y, bounds.y),
+    }))
+  }
 
   async function applyCrop() {
     setBusy(true)
@@ -149,7 +173,7 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
       <div className="profile-image-thumb">{previewSrc ? <img src={previewSrc} alt="Current profile"/> : <ImageSquare size={24}/>}</div>
       <div className="profile-image-copy"><strong>{previewSrc ? 'Profile photo added' : 'Add a profile photo'}</strong><small>{disabled ? 'Create the page before adding its photo.' : hint}</small></div>
       <div className="profile-image-actions">
-        <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}><Crop size={16}/>{previewSrc ? 'Replace' : 'Choose photo'}</button>
+        <button ref={chooseButtonRef} type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}><Crop size={16} aria-hidden="true"/>{previewSrc ? 'Replace' : 'Choose photo'}</button>
         {previewSrc && <button type="button" className="profile-image-remove" disabled={disabled || busy} onClick={removeImage} aria-label="Remove profile photo" title="Remove profile photo"><Trash size={17}/></button>}
       </div>
     </div>
@@ -157,14 +181,14 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
     <input ref={inputRef} className="profile-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage}/>
     {error && !source && <small className="profile-image-error" role="alert">{error}</small>}
     {source && <div className="profile-crop-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) closeCrop() }}>
-      <section className="profile-crop-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-crop-title">
+      <section ref={dialogRef} className="profile-crop-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-crop-title" aria-describedby="profile-crop-help">
         <header><div><span>Profile photo</span><h2 id="profile-crop-title">Crop your image</h2></div><button type="button" onClick={closeCrop} disabled={busy} aria-label="Close image cropper"><X size={20}/></button></header>
-        <div ref={cropRef} className="profile-crop-viewport" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
+        <div ref={cropRef} className="profile-crop-viewport" tabIndex="0" role="group" aria-label="Photo crop area. Drag the image or use the arrow keys to reposition it." onKeyDown={moveWithKeyboard} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
           <img src={source} alt="Crop preview" draggable="false" onLoad={(event) => setImageSize({ width:event.currentTarget.naturalWidth, height:event.currentTarget.naturalHeight })} style={imageSize.width ? { width:`${imageSize.width * previewScale}px`, height:`${imageSize.height * previewScale}px`, left:`calc(50% + ${crop.x}px)`, top:`calc(50% + ${crop.y}px)` } : undefined}/>
           <div className="profile-crop-guide" aria-hidden="true"/>
         </div>
-        <label className="profile-crop-zoom"><span>Zoom</span><input type="range" min="1" max="3" step="0.01" value={crop.zoom} onChange={(event) => updateZoom(event.target.value)}/></label>
-        <p>Drag the image to choose what appears inside the square profile photo.</p>
+        <label className="profile-crop-zoom"><span>Zoom</span><input name="profilePhotoZoom" type="range" min="1" max="3" step="0.01" value={crop.zoom} onChange={(event) => updateZoom(event.target.value)}/></label>
+        <p id="profile-crop-help">Drag the image or use the arrow keys to choose what appears inside the square profile photo.</p>
         {error && <small className="profile-crop-error" role="alert">{error}</small>}
         <footer><button type="button" onClick={closeCrop} disabled={busy}>Cancel</button><button type="button" className="profile-crop-apply" onClick={applyCrop} disabled={busy || !imageSize.width}><Check size={17}/>{busy ? 'Preparing…' : 'Use photo'}</button></footer>
       </section>

@@ -33,7 +33,7 @@ export default function TappyPage({ publicId }) {
     Object.entries(values).forEach(([selector, content]) => document.querySelector(selector)?.setAttribute('content', content))
   }, [page, publicId])
 
-  if (state === 'loading') return <main className="managed-page-state"><span className="managed-page-logo">tappy.</span><p>Opening page...</p></main>
+  if (state === 'loading') return <main className="managed-page-state"><span className="managed-page-logo">tappy.</span><p>Opening page…</p></main>
   if (state === 'missing') return <main className="managed-page-state"><a className="managed-page-logo" href="/">tappy.</a><h1>Page unavailable.</h1><p>This Tappy Page may be inactive or the link may be incorrect.</p></main>
 
   return <main className="managed-page" data-accent={page.accent} data-background={page.background_texture || 'clean'} data-template={page.template || 'classic'}>

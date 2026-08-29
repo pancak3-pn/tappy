@@ -2,10 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
-import AdminDashboard from './AdminDashboard'
-import TappyPage from './TappyPage'
 import PublicPage from './PublicPages'
-import CustomerPageEditor from './CustomerPageEditor'
 import { track } from './analytics'
 import { DELIVERY_PROVINCES, getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import {
@@ -15,6 +12,14 @@ import {
 } from '@phosphor-icons/react'
 
 gsap.registerPlugin(ScrollTrigger, useGSAP)
+
+const AdminDashboard = React.lazy(() => import('./AdminDashboard'))
+const TappyPage = React.lazy(() => import('./TappyPage'))
+const CustomerPageEditor = React.lazy(() => import('./CustomerPageEditor'))
+
+function RouteLoading() {
+  return <main className="managed-page-state" aria-live="polite"><span className="managed-page-logo">tappy.</span><p>Opening…</p></main>
+}
 
 const destinations = [
   { name: 'Contact Profile', type: 'contact', icon: Phone, color: '#24503e', title: 'Juan Dela Cruz', meta: 'Business Owner', action: 'Save contact' },
@@ -434,9 +439,9 @@ export default function App() {
   if (privacyPage) return <div ref={appRef}><PublicPage type="privacy" Header={Header} Footer={Footer} /></div>
   if (termsPage) return <div ref={appRef}><PublicPage type="terms" Header={Header} Footer={Footer} /></div>
   if (unknownPage) return <NotFound />
-  if (managedPage) return <TappyPage publicId={publicPageId} />
-  if (customerEditor) return <CustomerPageEditor token={customerEditToken} />
-  if (adminPage) return <div ref={appRef}><AdminDashboard /></div>
+  if (managedPage) return <React.Suspense fallback={<RouteLoading/>}><TappyPage publicId={publicPageId}/></React.Suspense>
+  if (customerEditor) return <React.Suspense fallback={<RouteLoading/>}><CustomerPageEditor token={customerEditToken}/></React.Suspense>
+  if (adminPage) return <div ref={appRef}><React.Suspense fallback={<RouteLoading/>}><AdminDashboard/></React.Suspense></div>
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout /><OrderFlow /><div className="order-page-footer shell"><Logo /><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header /><BackToTop /><div className="site-curtain"><Hero /><HowItWorks /><DestinationSwitcher /><Products /><UseCaseTicker /><Pricing /></div><div className="footer-reveal"><div className="footer-stack"><Footer /></div></div></main>
 }

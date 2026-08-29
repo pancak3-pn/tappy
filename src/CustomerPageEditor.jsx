@@ -7,7 +7,7 @@ import ManagedProfileCard from './ManagedProfileCard.jsx'
 
 const types = [['website','Website'],['maps','Google Maps'],['facebook','Facebook'],['instagram','Instagram'],['linkedin','LinkedIn'],['reviews','Google Reviews'],['portfolio','Portfolio'],['booking','Booking']]
 const typeLabels = Object.fromEntries(types)
-const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', backgroundTexture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
+const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', accentColor:page.accent_color || ({ forest:'#244a3a', ink:'#151515', blue:'#2757a5' }[page.accent] || '#244a3a'), backgroundTexture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
 const linksToRequest = (links) => links.filter((link) => link.url.trim()).map((link) => ({ type:types.some(([type]) => type === link.type) ? link.type : 'website', label:typeLabels[link.type] || 'Website', url:link.url.trim() }))
 
 // Instagram's real gradient logo as an inline SVG
@@ -41,7 +41,6 @@ const linkIconMap = {
 
 export default function CustomerPageEditor({ token }) {
   const [form, setForm] = useState(fromPage())
-  const [original, setOriginal] = useState(fromPage())
   const [publicId, setPublicId] = useState('')
   const [state, setState] = useState('loading')
   const [feedback, setFeedback] = useState({ type:'', message:'' })
@@ -50,7 +49,7 @@ export default function CustomerPageEditor({ token }) {
   const dirtyRef = useRef(false)
   const loadedRef = useRef(false)
   const savedRef = useRef(false)
-  const markDirty = () => { if (loadedRef.current) { dirtyRef.current = true; setDirty(true) } }
+  const markDirty = () => { if (loadedRef.current) { savedRef.current = false; dirtyRef.current = true; setDirty(true) } }
   const clearDirty = () => { dirtyRef.current = false; setDirty(false) }
 
   useEffect(() => {
@@ -58,14 +57,13 @@ export default function CustomerPageEditor({ token }) {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'This editing link is unavailable.')
       const loaded = fromPage(result.page)
-      setForm(loaded); setOriginal(loaded); setPublicId(result.page.public_id); setState('ready'); loadedRef.current = true
+      setForm(loaded); setPublicId(result.page.public_id); setState('ready'); loadedRef.current = true
     }).catch((error) => { setFeedback({ type:'error', message:error.message }); setState('error') })
   }, [token])
 
   // Refresh the "original" baseline after a successful save so dirty resets.
   useEffect(() => {
     if (state === 'saved') {
-      setOriginal(form)
       clearDirty()
       savedRef.current = true
     }
@@ -108,23 +106,12 @@ export default function CustomerPageEditor({ token }) {
     event.preventDefault()
     setState('saving'); setFeedback({ type:'', message:'' })
     try {
-      // Upload (or remove) a pending photo first so the PATCH includes the new URL in one commit.
-      let photoUrl = form.photoUrl
-      if (photoPending && photoPending !== 'remove') {
-        const photoResponse = await fetch(`/api/pages/edit/${token}/photo`, { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ imageData:photoPending.imageData }) })
-        const photoResult = await photoResponse.json()
-        if (!photoResponse.ok) throw new Error(photoResult.error || 'Your photo could not be uploaded.')
-        photoUrl = photoResult.photoUrl
-      } else if (photoPending === 'remove') {
-        const photoResponse = await fetch(`/api/pages/edit/${token}/photo`, { method:'DELETE' })
-        const photoResult = await photoResponse.json()
-        if (!photoResponse.ok) throw new Error(photoResult.error || 'Your photo could not be removed.')
-        photoUrl = ''
-      }
-      const response = await fetch(`/api/pages/edit/${token}`, { method:'PATCH', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ ...form, photoUrl, links:linksToRequest(form.links) }) })
+      const editableFields = { ...form }
+      delete editableFields.photoUrl
+      const response = await fetch(`/api/pages/edit/${token}`, { method:'PATCH', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ ...editableFields, links:linksToRequest(form.links), photoImageData:photoPending && photoPending !== 'remove' ? photoPending.imageData : undefined, removePhoto:photoPending === 'remove' }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Your page could not be saved.')
-      const saved = fromPage({ ...result.page, photo_url:photoUrl || result.page.photo_url })
+      const saved = fromPage(result.page)
       setForm(saved)
       setPhotoPending(null)
       setFeedback({ type:'success', message:'Your public page is updated.' })
@@ -137,7 +124,7 @@ export default function CustomerPageEditor({ token }) {
     }
   }
 
-  if (state === 'loading') return <main className="customer-editor-state"><b>tappy.</b><div className="customer-editor-loading" aria-label="Loading"><span/><span/><span/></div><p>Opening your page editor...</p></main>
+  if (state === 'loading') return <main className="customer-editor-state"><b>tappy.</b><div className="customer-editor-loading" aria-label="Loading"><span/><span/><span/></div><p>Opening your page editor…</p></main>
   if (state === 'error') return <main className="customer-editor-state"><b>tappy.</b><h1>Link unavailable.</h1><p>{feedback.message}</p><a href="mailto:hello@tappycard.tech">Contact Tappy</a></main>
 
   const previewPhoto = photoPending === 'remove' ? '' : (photoPending?.imageData || form.photoUrl || '')
@@ -147,25 +134,25 @@ export default function CustomerPageEditor({ token }) {
       <section><span>Private page editor</span><h1>Make it yours.</h1><p>Edit your details, then save. Nothing changes on your public page until you press Save.</p></section>
       <div className="customer-editor-main">
         <form onSubmit={save} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); save(event) } }}>
-          <div><label>Display name<input required maxLength="100" value={form.displayName} onChange={(e) => updateField('displayName', e.target.value)}/></label><label>Role or headline<input maxLength="120" value={form.headline} onChange={(e) => updateField('headline', e.target.value)}/></label></div>
-          <label>Short introduction<textarea maxLength="360" value={form.bio} onChange={(e) => updateField('bio', e.target.value)}/></label>
+          <div><label>Display name<input name="displayName" autoComplete="name" required maxLength="100" value={form.displayName} onChange={(e) => updateField('displayName', e.target.value)}/></label><label>Role or headline<input name="headline" autoComplete="organization-title" maxLength="120" value={form.headline} onChange={(e) => updateField('headline', e.target.value)}/></label></div>
+          <label>Short introduction<textarea name="bio" autoComplete="off" maxLength="360" value={form.bio} onChange={(e) => updateField('bio', e.target.value)}/></label>
           <ProfileImageUpload value={form.photoUrl} onUpload={() => {}} onRemove={() => {}} deferred onPendingChange={handlePhotoPending}/>
-          <div><label>Public email<input type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)}/></label><label>Phone<input value={form.phone} onChange={(e) => updateField('phone', e.target.value)}/></label></div>
-          <label>Location<input maxLength="140" value={form.location} onChange={(e) => updateField('location', e.target.value)}/></label>
-           <div><label>Button color<select value={form.accent} onChange={(e) => updateField('accent', e.target.value)}><option value="forest">Forest green</option><option value="ink">Black</option><option value="blue">Cobalt blue</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
+          <div><label>Public email<input name="email" type="email" autoComplete="email" spellCheck="false" value={form.email} onChange={(e) => updateField('email', e.target.value)}/></label><label>Phone<input name="phone" type="tel" autoComplete="tel" inputMode="tel" value={form.phone} onChange={(e) => updateField('phone', e.target.value)}/></label></div>
+          <label>Location<input name="location" autoComplete="address-level2" maxLength="140" value={form.location} onChange={(e) => updateField('location', e.target.value)}/></label>
+           <div><label>Button color<span className="profile-color-control"><input name="accentColorPicker" type="color" value={/^#[0-9a-f]{6}$/i.test(form.accentColor) ? form.accentColor : '#244a3a'} aria-label="Choose button color" onChange={(e) => updateField('accentColor', e.target.value)}/><input name="accentColor" value={form.accentColor} maxLength="7" pattern="#[0-9A-Fa-f]{6}" spellCheck="false" aria-label="Button color hexadecimal value" onChange={(e) => { if (/^#[0-9a-f]{0,6}$/i.test(e.target.value)) updateField('accentColor', e.target.value) }}/></span></label><label>Background design<select name="backgroundTexture" value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><optgroup label="Tappy essentials"><option value="clean">Minimal canvas</option><option value="linen">Soft halo</option><option value="silver">Fine pinstripe</option><option value="forest-grain">Tappy dot grid</option><option value="blueprint">Technical grid</option></optgroup><optgroup label="Experimental"><option value="minimal-gradient">Minimal gradient</option><option value="geometric-flow">Geometric flow</option><option value="soft-waves">Soft waves</option><option value="tech-circuit">Tech circuit</option><option value="dark-texture">Dark texture</option></optgroup></select></label></div>
            <fieldset className="customer-template-picker"><legend>Page layout</legend><div className="customer-template-options">{[['classic','Classic','Centered profile'],['split','Split','Photo-led intro'],['compact','Compact','Links first']].map(([value,label,description]) => <label key={value} className={form.template === value ? 'selected' : ''}><input type="radio" name="template" value={value} checked={form.template === value} onChange={(e) => updateField('template', e.target.value)}/><span><strong>{label}</strong><small>{description}</small></span></label>)}</div></fieldset>
           <fieldset><legend>Public links</legend>
             {form.links.slice(0,8).map((link,index) => <div key={index} className="customer-link-row">
               <div className="customer-link-type-wrapper">
-                <span className="customer-link-type-icon">{linkIconMap[link.type] || <FaGlobe/>}</span>
-                <select aria-label={`Link ${index + 1} type`} value={link.type} onChange={(e) => updateLink(index,'type',e.target.value)}>{types.map(([type,label]) => <option value={type} key={type}>{label}</option>)}</select>
+                <span className="customer-link-type-icon">{linkIconMap[link.type] || <Globe/>}</span>
+                <select name={`link-${index}-type`} aria-label={`Link ${index + 1} type`} value={link.type} onChange={(e) => updateLink(index,'type',e.target.value)}>{types.map(([type,label]) => <option value={type} key={type}>{label}</option>)}</select>
               </div>
-              <input aria-label={`Link ${index + 1} URL`} type="url" placeholder="https://" value={link.url} onChange={(e) => updateLink(index,'url',e.target.value)}/>
+              <input name={`link-${index}-url`} autoComplete="off" spellCheck="false" aria-label={`Link ${index + 1} URL`} type="url" placeholder="https://example.com/…" value={link.url} onChange={(e) => updateLink(index,'url',e.target.value)}/>
               <button type="button" className="customer-link-remove" onClick={() => removeLink(index)} aria-label={`Remove link ${index + 1}`} title="Remove link"><Minus size={15}/></button>
             </div>)}
             <button type="button" className="customer-link-add" onClick={addLink} disabled={form.links.length >= 8}><Plus size={15}/>Add link</button>
           </fieldset>
-          <div className="customer-editor-submit"><button type="submit" disabled={state === 'saving' || state === 'saved'}>{state === 'saving' ? 'Saving...' : state === 'saved' ? 'Saved' : 'Save changes'}</button>{dirty && <span className="customer-editor-unsaved">Unsaved changes</span>}{feedback.message && <p role="status" data-error={feedback.type === 'error'}>{feedback.type === 'success' ? <CheckCircle size={17}/> : <XCircle size={17}/>}{feedback.message}</p>}</div>
+          <div className="customer-editor-submit"><button type="submit" disabled={state === 'saving' || state === 'saved'}>{state === 'saving' ? 'Saving…' : state === 'saved' ? 'Saved' : 'Save changes'}</button>{dirty && <span className="customer-editor-unsaved">Unsaved changes</span>}{feedback.message && <p role="status" aria-live="polite" data-error={feedback.type === 'error'}>{feedback.type === 'success' ? <CheckCircle size={17} aria-hidden="true"/> : <XCircle size={17} aria-hidden="true"/>}{feedback.message}</p>}</div>
         </form>
 
          <aside className="customer-editor-preview">

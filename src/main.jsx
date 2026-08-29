@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/jetbrains-mono'
-import 'flag-icons/css/flag-icons.min.css'
 import App from './App.jsx'
 import './styles.css'
 
