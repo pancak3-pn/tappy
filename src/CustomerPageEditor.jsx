@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowSquareOut, Briefcase, CalendarBlank, CheckCircle, EnvelopeSimple, Eye, Globe, LinkedinLogo, MapPin, Minus, Phone, Plus, XCircle } from '@phosphor-icons/react'
+import { ArrowSquareOut, Briefcase, CalendarBlank, CheckCircle, Eye, Globe, LinkedinLogo, Minus, Plus, XCircle } from '@phosphor-icons/react'
 import { SiFacebook, SiGooglemaps } from 'react-icons/si'
 import { FcGoogle } from 'react-icons/fc'
 import ProfileImageUpload from './ProfileImageUpload.jsx'
+import ManagedProfileCard from './ManagedProfileCard.jsx'
 
 const types = [['website','Website'],['maps','Google Maps'],['facebook','Facebook'],['instagram','Instagram'],['linkedin','LinkedIn'],['reviews','Google Reviews'],['portfolio','Portfolio'],['booking','Booking']]
 const typeLabels = Object.fromEntries(types)
 const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', backgroundTexture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
 const linksToRequest = (links) => links.filter((link) => link.url.trim()).map((link) => ({ type:types.some(([type]) => type === link.type) ? link.type : 'website', label:typeLabels[link.type] || 'Website', url:link.url.trim() }))
-
-function previewInitials(name) {
-  return name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'TP'
-}
 
 // Instagram's real gradient logo as an inline SVG
 function InstagramIcon({ size = '1em' }) {
@@ -155,7 +152,7 @@ export default function CustomerPageEditor({ token }) {
           <ProfileImageUpload value={form.photoUrl} onUpload={() => {}} onRemove={() => {}} deferred onPendingChange={handlePhotoPending}/>
           <div><label>Public email<input type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)}/></label><label>Phone<input value={form.phone} onChange={(e) => updateField('phone', e.target.value)}/></label></div>
           <label>Location<input maxLength="140" value={form.location} onChange={(e) => updateField('location', e.target.value)}/></label>
-           <div><label>Accent<select value={form.accent} onChange={(e) => updateField('accent', e.target.value)}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
+           <div><label>Button color<select value={form.accent} onChange={(e) => updateField('accent', e.target.value)}><option value="forest">Forest green</option><option value="ink">Black</option><option value="blue">Cobalt blue</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
            <fieldset className="customer-template-picker"><legend>Page layout</legend><div className="customer-template-options">{[['classic','Classic','Centered profile'],['split','Split','Photo-led intro'],['compact','Compact','Links first']].map(([value,label,description]) => <label key={value} className={form.template === value ? 'selected' : ''}><input type="radio" name="template" value={value} checked={form.template === value} onChange={(e) => updateField('template', e.target.value)}/><span><strong>{label}</strong><small>{description}</small></span></label>)}</div></fieldset>
           <fieldset><legend>Public links</legend>
             {form.links.slice(0,8).map((link,index) => <div key={index} className="customer-link-row">
@@ -171,30 +168,12 @@ export default function CustomerPageEditor({ token }) {
           <div className="customer-editor-submit"><button type="submit" disabled={state === 'saving' || state === 'saved'}>{state === 'saving' ? 'Saving...' : state === 'saved' ? 'Saved' : 'Save changes'}</button>{dirty && <span className="customer-editor-unsaved">Unsaved changes</span>}{feedback.message && <p role="status" data-error={feedback.type === 'error'}>{feedback.type === 'success' ? <CheckCircle size={17}/> : <XCircle size={17}/>}{feedback.message}</p>}</div>
         </form>
 
-        <aside className="customer-editor-preview">
-          <div className="customer-editor-preview-label"><Eye size={15}/>Live preview</div>
-          <div className="customer-preview-phone-shell">
-             <div className="customer-preview-phone" data-accent={form.accent} data-background={form.backgroundTexture} data-template={form.template}>
-              <header><span>tappy.</span></header>
-              <div className="customer-preview-profile">
-                {previewPhoto ? <img src={previewPhoto} alt=""/> : <i>{previewInitials(form.displayName)}</i>}
-                <h3>{form.displayName || 'Your name'}</h3>
-                <p>{form.headline || 'Your role or business'}</p>
-                {form.location && <small><MapPin size={13}/>{form.location}</small>}
-              </div>
-              {form.bio && <p className="customer-preview-bio">{form.bio}</p>}
-              <div className="customer-preview-actions">
-                {form.phone && <button type="button"><Phone size={13}/> Call now</button>}
-                {form.email && <a href={`mailto:${form.email}`} aria-label="Email" title="Email"><EnvelopeSimple /></a>}
-                {form.links.filter((link) => link.url.trim()).map((link,index) => (
-                  <button type="button" key={`${link.url}-${index}`} title={link.label} aria-label={link.label}>
-                    {linkIconMap[link.type] || <Globe/>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
+         <aside className="customer-editor-preview">
+           <div className="customer-editor-preview-label"><Eye size={15}/>Live preview</div>
+           <div className="customer-preview-phone-shell">
+             <ManagedProfileCard page={{ ...form, photoUrl:previewPhoto }} preview/>
+           </div>
+         </aside>
       </div>
     </div>
   </main>
