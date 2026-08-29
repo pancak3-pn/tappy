@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/node'
 import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import { managedProfilePayload, normalizeAccentColor, PROFILE_ACCENTS, PROFILE_BACKGROUNDS, PROFILE_TEMPLATES } from '../shared/managed-profile.js'
+import { canTransitionOrder, canTransitionPayment, lifecycleTimestamps, ORDER_STATUSES, PAYMENT_STATUSES } from '../shared/order-lifecycle.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -21,6 +22,8 @@ if (!adminTokenSecret) {
 }
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailFrom = process.env.EMAIL_FROM || 'Tappy <orders@example.com>'
+const cronSecret = process.env.CRON_SECRET || ''
+const paymentReminderDelay = Math.max(Number.parseInt(process.env.PAYMENT_REMINDER_AFTER_MINUTES, 10) || 45, 15)
 const unitPrice = 199
 const allowedPayments = new Set(['gcash'])
 
@@ -255,6 +258,29 @@ async function sendDeliveryEmail(order) {
   })
 }
 
+async function sendPaymentReminderEmail(order) {
+  if (!resendApiKey) return { status:'not_configured', id:null }
+  return deliverEmail({
+    to:order.email,
+    subject:`Reminder: complete your Tappy payment - ${order.order_number}`,
+    idempotencyKey:`payment-reminder-v1-${order.id}`,
+    text:`Hi ${order.customer_name}, your Tappy order ${order.order_number} is still reserved and awaiting GCash payment proof. Total: PHP ${order.total}. If you already paid, reply to this email with your receipt and order number. If you no longer want the order, you can ignore this reminder or contact hello@tappycard.tech to cancel it.`,
+    html:emailTemplate({
+      preheader:`Your Tappy order ${order.order_number} is still awaiting GCash payment proof.`,
+      badge:`Payment reminder · ${order.order_number}`,
+      title:'Your order is still reserved.',
+      greeting:order.customer_name,
+      message:'We have not received your GCash payment proof yet. Complete the payment shown on your order page, then submit the receipt for verification. If you already paid but closed the page, reply to this email with your receipt and order number.',
+      rows:[
+        ['Order number', escapeHtml(order.order_number)],
+        ['Amount due', `&#8369;${order.total}`, true],
+        ['Status', 'Awaiting payment proof'],
+      ],
+      notice:'This is the only automatic reminder we will send for this order. Ignore it if you no longer wish to continue, or contact us to cancel the order.',
+    }),
+  })
+}
+
 async function sendPageAccessEmail({ email, name, editUrl, expiresAt }) {
   if (!resendApiKey) return { status:'not_configured', id:null }
   const safeUrl = escapeHtml(editUrl)
@@ -315,6 +341,43 @@ async function requestHandler(request, response) {
   if (request.method === 'GET' && request.url === '/api/health') {
     const { error } = await supabase.from('orders').select('id', { head:true, count:'exact' }).limit(1)
     return send(response, error ? 503 : 200, error ? { ok:false, error:'Supabase unavailable or schema not installed.' } : { ok:true, backend:'supabase' })
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/cron/payment-reminders') {
+    if (!cronSecret) return send(response, 503, { error:'Payment reminders are not configured.' })
+    const authorization = request.headers.authorization || ''
+    if (!safeEqual(authorization, `Bearer ${cronSecret}`)) return send(response, 401, { error:'Unauthorized.' })
+    if (!resendApiKey) return send(response, 503, { error:'Email delivery is not configured.' })
+    const cutoff = new Date(Date.now() - paymentReminderDelay * 60 * 1000).toISOString()
+    const { data:orders, error } = await supabase.from('orders')
+      .select('id,order_number,customer_name,email,total')
+      .eq('payment_status', 'awaiting_payment')
+      .eq('order_status', 'pending_payment_verification')
+      .is('payment_reminder_email_sent_at', null)
+      .lte('created_at', cutoff)
+      .order('created_at', { ascending:true })
+      .limit(100)
+    if (error) return send(response, 503, { error:'Payment reminders could not be loaded. Run migration 018.' })
+    const results = { checked:orders.length, sent:0, failed:0 }
+    for (const order of orders) {
+      let delivery
+      try { delivery = await sendPaymentReminderEmail(order) }
+      catch (emailError) {
+        delivery = { status:'failed', id:null }
+        console.error('Payment reminder failed:', emailError.message)
+      }
+      const sentAt = delivery.status === 'sent' ? new Date().toISOString() : null
+      const { error:updateError } = await supabase.from('orders').update({
+        payment_reminder_email_status:delivery.status,
+        payment_reminder_email_id:delivery.id,
+        payment_reminder_email_sent_at:sentAt,
+        payment_reminder_last_attempt_at:new Date().toISOString(),
+      }).eq('id', order.id).is('payment_reminder_email_sent_at', null)
+      if (updateError) console.error('Payment reminder tracking failed:', updateError.message)
+      if (delivery.status === 'sent') results.sent += 1
+      else results.failed += 1
+    }
+    return send(response, 200, results)
   }
 
   if (request.method === 'POST' && url.pathname === '/api/analytics') {
@@ -528,8 +591,8 @@ async function requestHandler(request, response) {
     if (request.method === 'PATCH' && match) {
       try {
         const body = await readJson(request)
-        const allowedOrderStatuses = new Set(['pending_payment_verification','pending_fulfillment','processing','shipped','delivered','cancelled'])
-        const allowedPaymentStatuses = new Set(['awaiting_payment','proof_submitted','paid','rejected'])
+        const allowedOrderStatuses = new Set(ORDER_STATUSES)
+        const allowedPaymentStatuses = new Set(PAYMENT_STATUSES)
         const update = {}
         if (body.orderStatus !== undefined && allowedOrderStatuses.has(body.orderStatus)) update.order_status = body.orderStatus
         if (body.paymentStatus !== undefined && allowedPaymentStatuses.has(body.paymentStatus)) update.payment_status = body.paymentStatus
@@ -539,6 +602,15 @@ async function requestHandler(request, response) {
         if (!Object.keys(update).length) return send(response, 400, { error:'No valid changes supplied.' })
         const { data:before, error:beforeError } = await supabase.from('orders').select('*').eq('id', match[1]).single()
         if (beforeError) return send(response, 404, { error:'Order not found.' })
+        const nextPaymentStatus = update.payment_status || before.payment_status
+        const nextOrderStatus = update.order_status || before.order_status
+        if (update.payment_status && !canTransitionPayment(before.payment_status, nextPaymentStatus)) {
+          return send(response, 409, { error:`Payment cannot move from ${before.payment_status.replaceAll('_', ' ')} to ${nextPaymentStatus.replaceAll('_', ' ')}.` })
+        }
+        if (update.order_status && !canTransitionOrder(before.order_status, nextOrderStatus, nextPaymentStatus)) {
+          return send(response, 409, { error:`Order cannot move from ${before.order_status.replaceAll('_', ' ')} to ${nextOrderStatus.replaceAll('_', ' ')}.` })
+        }
+        Object.assign(update, lifecycleTimestamps(before.order_status, nextOrderStatus))
         const { data, error } = await supabase.from('orders').update(update).eq('id', match[1]).select('*').single()
         if (error) return send(response, 503, { error:'Order could not be updated.' })
         const decision = ['paid','rejected'].includes(update.payment_status) && before.payment_status !== update.payment_status ? update.payment_status : null

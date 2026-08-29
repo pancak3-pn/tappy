@@ -29,10 +29,20 @@ create table if not exists public.orders (
   payment_decision_email_type text
     check (payment_decision_email_type is null or payment_decision_email_type in ('paid', 'rejected')),
   payment_decision_email_sent_at timestamptz,
+  payment_reminder_email_status text not null default 'not_configured'
+    check (payment_reminder_email_status in ('not_configured', 'sent', 'failed')),
+  payment_reminder_email_id text,
+  payment_reminder_email_sent_at timestamptz,
+  payment_reminder_last_attempt_at timestamptz,
   delivery_email_status text not null default 'not_configured'
     check (delivery_email_status in ('not_configured', 'sent', 'failed')),
   delivery_email_id text,
   delivery_email_sent_at timestamptz,
+  payment_approved_at timestamptz,
+  processing_started_at timestamptz,
+  shipped_at timestamptz,
+  delivered_at timestamptz,
+  cancelled_at timestamptz,
   admin_read_at timestamptz,
   admin_notes text,
   created_at timestamptz not null default now(),
@@ -48,6 +58,11 @@ create index if not exists orders_status_idx on public.orders (order_status, pay
 create index if not exists orders_admin_unread_idx
   on public.orders (created_at desc)
   where admin_read_at is null;
+create index if not exists orders_payment_reminder_due_idx
+  on public.orders (created_at)
+  where payment_status = 'awaiting_payment'
+    and order_status = 'pending_payment_verification'
+    and payment_reminder_email_sent_at is null;
 create unique index if not exists orders_payment_reference_unique_idx
   on public.orders (lower(payment_reference))
   where payment_reference is not null and payment_reference <> '';
