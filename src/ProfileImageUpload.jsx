@@ -15,7 +15,7 @@ function readImage(file) {
 
 function clamp(value, minimum, maximum) { return Math.min(Math.max(value, minimum), maximum) }
 
-export default function ProfileImageUpload({ value, name = 'Profile photo', disabled = false, hint = 'JPG, PNG, or WebP. You can crop it before upload.', onUpload, onRemove }) {
+export default function ProfileImageUpload({ value, name = 'Profile photo', disabled = false, hint = 'JPG, PNG, or WebP. You can crop it before upload.', onUpload, onRemove, deferred = false, onPendingChange }) {
   const inputRef = useRef(null)
   const cropRef = useRef(null)
   const dragRef = useRef(null)
@@ -24,6 +24,11 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
   const [source, setSource] = useState('')
   const [imageSize, setImageSize] = useState({ width:0, height:0 })
   const [crop, setCrop] = useState({ zoom:1, x:0, y:0 })
+  const [pending, setPending] = useState(null)
+
+  // When the stored value changes externally (e.g. after the parent saves),
+  // clear any deferred pending change so the UI reflects the committed state.
+  useEffect(() => { setPending(null) }, [value])
 
   useEffect(() => {
     if (!source) return undefined
@@ -36,6 +41,11 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [source, busy])
+
+  function clearPending() {
+    setPending(null)
+    onPendingChange?.(null)
+  }
 
   function closeCrop() {
     setSource('')
@@ -84,29 +94,45 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
   function stopDrag(event) { if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null }
 
   async function applyCrop() {
-    const image = new Image()
-    image.src = source
-    await image.decode()
-    const { scale, viewport } = cropBounds()
-    const sourceSize = viewport / scale
-    const sourceX = clamp((image.naturalWidth - sourceSize) / 2 - crop.x / scale, 0, image.naturalWidth - sourceSize)
-    const sourceY = clamp((image.naturalHeight - sourceSize) / 2 - crop.y / scale, 0, image.naturalHeight - sourceSize)
-    const canvas = document.createElement('canvas')
-    canvas.width = 800
-    canvas.height = 800
-    const context = canvas.getContext('2d', { alpha:false })
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, 800, 800)
-    context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 800, 800)
-    const croppedImage = canvas.toDataURL('image/webp', .86)
     setBusy(true)
     setError('')
-    try { await onUpload(croppedImage); closeCrop() }
-    catch (uploadError) { setError(uploadError.message || 'The image could not be uploaded.') }
-    finally { setBusy(false) }
+    try {
+      const image = new Image()
+      image.src = source
+      await image.decode()
+      const { scale, viewport } = cropBounds()
+      const sourceSize = viewport / scale
+      const sourceX = clamp((image.naturalWidth - sourceSize) / 2 - crop.x / scale, 0, image.naturalWidth - sourceSize)
+      const sourceY = clamp((image.naturalHeight - sourceSize) / 2 - crop.y / scale, 0, image.naturalHeight - sourceSize)
+      const canvas = document.createElement('canvas')
+      canvas.width = 800
+      canvas.height = 800
+      const context = canvas.getContext('2d', { alpha:false })
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, 800, 800)
+      context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 800, 800)
+      const croppedImage = canvas.toDataURL('image/webp', .86)
+      if (deferred) {
+        setPending({ imageData: croppedImage })
+        onPendingChange?.({ imageData: croppedImage })
+        closeCrop()
+      } else {
+        await onUpload(croppedImage)
+        closeCrop()
+      }
+    } catch (uploadError) {
+      setError(uploadError.message || 'The image could not be prepared.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function removeImage() {
+    if (deferred) {
+      setPending('remove')
+      onPendingChange?.('remove')
+      return
+    }
     setBusy(true)
     setError('')
     try { await onRemove() }
@@ -115,17 +141,19 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
   }
 
   const previewScale = imageSize.width ? cropBounds().scale : 1
+  const previewSrc = pending === 'remove' ? '' : (pending?.imageData || value || '')
 
   return <div className="profile-image-upload">
     <span className="profile-image-label">{name}</span>
     <div className="profile-image-control">
-      <div className="profile-image-thumb">{value ? <img src={value} alt="Current profile"/> : <ImageSquare size={24}/>}</div>
-      <div className="profile-image-copy"><strong>{value ? 'Profile photo added' : 'Add a profile photo'}</strong><small>{disabled ? 'Create the page before adding its photo.' : hint}</small></div>
+      <div className="profile-image-thumb">{previewSrc ? <img src={previewSrc} alt="Current profile"/> : <ImageSquare size={24}/>}</div>
+      <div className="profile-image-copy"><strong>{previewSrc ? 'Profile photo added' : 'Add a profile photo'}</strong><small>{disabled ? 'Create the page before adding its photo.' : hint}</small></div>
       <div className="profile-image-actions">
-        <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}><Crop size={16}/>{value ? 'Replace' : 'Choose photo'}</button>
-        {value && <button type="button" className="profile-image-remove" disabled={disabled || busy} onClick={removeImage} aria-label="Remove profile photo" title="Remove profile photo"><Trash size={17}/></button>}
+        <button type="button" disabled={disabled || busy} onClick={() => inputRef.current?.click()}><Crop size={16}/>{previewSrc ? 'Replace' : 'Choose photo'}</button>
+        {previewSrc && <button type="button" className="profile-image-remove" disabled={disabled || busy} onClick={removeImage} aria-label="Remove profile photo" title="Remove profile photo"><Trash size={17}/></button>}
       </div>
     </div>
+    {pending && <div className="profile-image-pending"><span>{pending === 'remove' ? 'Photo will be removed when you save.' : 'Photo ready to save.'}</span><button type="button" onClick={clearPending} disabled={disabled}>Undo</button></div>}
     <input ref={inputRef} className="profile-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage}/>
     {error && <small className="profile-image-error" role="alert">{error}</small>}
     {source && <div className="profile-crop-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) closeCrop() }}>
@@ -137,7 +165,7 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
         </div>
         <label className="profile-crop-zoom"><span>Zoom</span><input type="range" min="1" max="3" step="0.01" value={crop.zoom} onChange={(event) => updateZoom(event.target.value)}/></label>
         <p>Drag the image to choose what appears inside the square profile photo.</p>
-        <footer><button type="button" onClick={closeCrop} disabled={busy}>Cancel</button><button type="button" className="profile-crop-apply" onClick={applyCrop} disabled={busy || !imageSize.width}><Check size={17}/>{busy ? 'Uploading...' : 'Use photo'}</button></footer>
+        <footer><button type="button" onClick={closeCrop} disabled={busy}>Cancel</button><button type="button" className="profile-crop-apply" onClick={applyCrop} disabled={busy || !imageSize.width}><Check size={17}/>{busy ? 'Preparing...' : 'Use photo'}</button></footer>
       </section>
     </div>}
   </div>
