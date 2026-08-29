@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Briefcase, CalendarBlank, EnvelopeSimple, Globe, LinkedinLogo, MapPin } from '@phosphor-icons/react'
 import { SiFacebook, SiGoogle, SiGooglemaps, SiInstagram } from 'react-icons/si'
+import { track } from './analytics'
 
 const linkIcons = {
   website:Globe,
@@ -29,6 +30,7 @@ export default function TappyPage({ publicId }) {
 
   useEffect(() => {
     if (!page) return
+    track('profile_view', { pageId:publicId })
     document.title = `${page.display_name} | Tappy`
     const description = page.bio || [page.headline, page.location].filter(Boolean).join(' in ') || `Connect with ${page.display_name} on Tappy.`
     const values = {
@@ -40,7 +42,7 @@ export default function TappyPage({ publicId }) {
       'meta[name="twitter:description"]':description,
     }
     Object.entries(values).forEach(([selector, content]) => document.querySelector(selector)?.setAttribute('content', content))
-  }, [page])
+  }, [page, publicId])
 
   if (state === 'loading') return <main className="managed-page-state"><span className="managed-page-logo">tappy.</span><p>Opening page...</p></main>
   if (state === 'missing') return <main className="managed-page-state"><a className="managed-page-logo" href="/">tappy.</a><h1>Page unavailable.</h1><p>This Tappy Page may be inactive or the link may be incorrect.</p></main>

@@ -4,6 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
 import AdminDashboard from './AdminDashboard'
 import TappyPage from './TappyPage'
+import { track } from './analytics'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
   InstagramLogo, List, MapPin, Phone,
@@ -361,6 +362,15 @@ export default function App() {
   const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
   const managedPage = Boolean(publicPageId)
   const unknownPage = !['','/order','/r','/how-it-works'].includes(currentPath) && !managedPage
+  useEffect(() => {
+    if (currentPath === '') track('homepage_view')
+    if (orderPage) track('checkout_start')
+    const trackOrderClick = (event) => {
+      if (event.target.closest('a[href="/order"]')) track('order_click')
+    }
+    document.addEventListener('click', trackOrderClick)
+    return () => document.removeEventListener('click', trackOrderClick)
+  }, [currentPath, orderPage])
   useGSAP(() => {
     if (orderPage || adminPage || howItWorksPage || managedPage || unknownPage) return undefined
     const media = gsap.matchMedia()

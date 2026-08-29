@@ -214,6 +214,21 @@ export async function handler(request, response) {
     return send(response, error ? 503 : 200, error ? { ok:false, error:'Supabase unavailable or schema not installed.' } : { ok:true, backend:'supabase' })
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/analytics') {
+    try {
+      const body = await readJson(request, 4_000)
+      const allowedEvents = new Set(['homepage_view', 'order_click', 'checkout_start', 'profile_view'])
+      const eventName = clean(body.eventName, 40)
+      const eventId = clean(body.eventId, 36)
+      if (!allowedEvents.has(eventName) || !/^[0-9a-f-]{36}$/i.test(eventId)) return send(response, 400, { error:'Invalid analytics event.' })
+      const pageId = eventName === 'profile_view' && /^[A-Za-z0-9_-]{22}$/.test(body.pageId || '') ? body.pageId : null
+      const { error } = await supabase.from('analytics_events').insert({ event_id:eventId, event_name:eventName, session_id:clean(body.sessionId, 64) || null, page_id:pageId, path:clean(body.path, 180) || null })
+      if (error?.code === '23505') return send(response, 202, { accepted:true })
+      if (error) return send(response, 503, { error:'Analytics is not configured. Run migration 009.' })
+      return send(response, 202, { accepted:true })
+    } catch { return send(response, 400, { error:'Invalid analytics event.' }) }
+  }
+
   if (request.method === 'POST' && url.pathname === '/api/admin/login') {
     if (!adminPassword) return send(response, 503, { error:'Admin access is not configured. Add ADMIN_PASSWORD to .env.' })
     try {
@@ -293,6 +308,25 @@ export async function handler(request, response) {
         if (monthlyMap.has(monthKey)) { monthlyMap.get(monthKey).revenue += amount; monthlyMap.get(monthKey).orders += 1 }
       })
       return send(response, 200, { metrics:{ revenue, paid:paidOrders.length, cards, average:paidOrders.length ? revenue / paidOrders.length : 0, daily, monthly } })
+    }
+    if (request.method === 'GET' && url.pathname === '/api/admin/analytics') {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const events = []
+      const pageSize = 1000
+      let eventPage = 0
+      while (true) {
+        const from = eventPage * pageSize
+        const { data, error } = await supabase.from('analytics_events').select('event_name,session_id,page_id,created_at').gte('created_at', since).order('created_at', { ascending:true }).range(from, from + pageSize - 1)
+        if (error) return send(response, 503, { error:'Analytics could not be loaded. Run migration 009.' })
+        events.push(...data)
+        if (data.length < pageSize) break
+        eventPage += 1
+      }
+      const count = (name) => events.filter((event) => event.event_name === name).length
+      const unique = (name) => new Set(events.filter((event) => event.event_name === name).map((event) => event.session_id).filter(Boolean)).size
+      const profileCounts = new Map()
+      events.filter((event) => event.event_name === 'profile_view' && event.page_id).forEach((event) => profileCounts.set(event.page_id, (profileCounts.get(event.page_id) || 0) + 1))
+      return send(response, 200, { analytics:{ periodDays:30, homepageVisits:count('homepage_view'), homepageVisitors:unique('homepage_view'), orderClicks:count('order_click'), checkoutStarts:count('checkout_start'), completedOrders:count('order_completed'), profileVisits:count('profile_view'), profileVisitors:unique('profile_view'), topProfiles:[...profileCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([pageId, views]) => ({ pageId, views })) } })
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/orders') {
       const status = clean(url.searchParams.get('status'), 40)
@@ -438,11 +472,13 @@ export async function handler(request, response) {
       address:order.address, city:order.city, postal_code:order.postal, quantity:order.quantity,
       unit_price:unitPrice, shipping_fee:shippingFee, total, payment_method:order.payment,
       payment_status:paymentStatus, order_status:orderStatus,
-    }).select('order_number,total,payment_method,payment_status,order_status,created_at').single()
+    }).select('id,order_number,total,payment_method,payment_status,order_status,created_at').single()
     if (error) {
       console.error('Supabase order insert failed:', error.message)
       return send(response, 503, { error:'The order could not be saved. Please try again.' })
     }
+    const { error:analyticsError } = await supabase.from('analytics_events').insert({ event_id:randomUUID(), event_name:'order_completed', order_id:data.id, path:'/order' })
+    if (analyticsError) console.error('Order analytics failed. Run migration 009:', analyticsError.message)
     let emailDelivery = { status:'not_configured', id:null }
     try {
       emailDelivery = await sendOrderConfirmation({ ...order, orderNumber:data.order_number, total:data.total })

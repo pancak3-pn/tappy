@@ -36,6 +36,7 @@ export default function AdminDashboard() {
   const [password, setPassword] = useState('')
   const [orders, setOrders] = useState([])
   const [salesMetrics, setSalesMetrics] = useState({ revenue:0, paid:0, cards:0, average:0, daily:[], monthly:[] })
+  const [analyticsMetrics, setAnalyticsMetrics] = useState({ periodDays:30, homepageVisits:0, homepageVisitors:0, orderClicks:0, checkoutStarts:0, completedOrders:0, profileVisits:0, profileVisitors:0, topProfiles:[] })
   const [adminView, setAdminView] = useState('overview')
   const [orderTab, setOrderTab] = useState('all')
   const [selectedId, setSelectedId] = useState('')
@@ -77,6 +78,7 @@ export default function AdminDashboard() {
     setOrders([])
     setPages([])
     setSalesMetrics({ revenue:0, paid:0, cards:0, average:0, daily:[], monthly:[] })
+    setAnalyticsMetrics({ periodDays:30, homepageVisits:0, homepageVisitors:0, orderClicks:0, checkoutStarts:0, completedOrders:0, profileVisits:0, profileVisitors:0, topProfiles:[] })
     alertsEnabledRef.current = false
     setAlertsEnabled(false)
     knownOrderIdsRef.current = new Set()
@@ -152,10 +154,12 @@ export default function AdminDashboard() {
       const headers = { authorization:`Bearer ${activeToken}` }
       const queueRequest = fetch('/api/admin/orders?status=all', { headers })
       const salesRequest = fetch('/api/admin/sales-metrics', { headers }).catch(() => null)
-      const [response, salesResponse] = await Promise.all([queueRequest, salesRequest])
+      const analyticsRequest = fetch('/api/admin/analytics', { headers }).catch(() => null)
+      const [response, salesResponse, analyticsResponse] = await Promise.all([queueRequest, salesRequest, analyticsRequest])
       const result = await response.json()
       const salesResult = salesResponse ? await salesResponse.json() : null
-      if (response.status === 401 || salesResponse?.status === 401) return logout('Your admin session expired.')
+      const analyticsResult = analyticsResponse ? await analyticsResponse.json() : null
+      if (response.status === 401 || salesResponse?.status === 401 || analyticsResponse?.status === 401) return logout('Your admin session expired.')
       if (!response.ok) throw new Error(result.error || 'Orders could not be loaded.')
       const newOrders = ordersInitializedRef.current ? result.orders.filter((order) => !knownOrderIdsRef.current.has(order.id)) : []
       knownOrderIdsRef.current = new Set(result.orders.map((order) => order.id))
@@ -164,6 +168,8 @@ export default function AdminDashboard() {
       if (newOrders.length && alertsEnabledRef.current) playOrderAlert(newOrders)
       if (salesResponse?.ok && salesResult?.metrics) setSalesMetrics(salesResult.metrics)
       else if (!quiet) notify('Orders loaded. Sales reporting is temporarily unavailable.', 'warning')
+      if (analyticsResponse?.ok && analyticsResult?.analytics) setAnalyticsMetrics(analyticsResult.analytics)
+      else if (!quiet) notify('Run Supabase migration 009 to enable visitor analytics.', 'warning')
       if (selectedId && !result.orders.some((order) => order.id === selectedId)) setSelectedId('')
     } catch (requestError) { setError(requestError.message) }
     finally { if (!quiet) setLoading(false) }
@@ -306,6 +312,7 @@ export default function AdminDashboard() {
     <div className="admin-shell">
       <div className="admin-title"><div><h1>{adminView === 'overview' ? 'Overview' : adminView === 'reports' ? 'Reports' : adminView === 'pages' ? 'Tappy Pages' : 'Orders'}</h1>{adminView === 'orders' && <p>{visibleOrders.length} of {orders.length}</p>}{adminView === 'pages' && <p>{pages.length} managed pages</p>}</div></div>
       {['overview','reports'].includes(adminView) && <section className="admin-sales-report" aria-labelledby="sales-report-title"><header className="admin-report-head"><div><h2 id="sales-report-title">Sales</h2></div><button type="button" onClick={() => window.print()}><Printer size={17}/>Save PDF</button></header><div className="admin-metrics" aria-label="Sales metrics"><div><span>Revenue</span><strong>{money(metrics.revenue)}</strong><small>Paid</small></div><div><span>Orders</span><strong>{metrics.paid}</strong><small>{metrics.unread} new</small></div><div><span>Cards sold</span><strong>{metrics.cards}</strong><small>Units</small></div><div><span>Average</span><strong>{money(metrics.average)}</strong><small>{metrics.payment} to verify</small></div></div><div className="sales-chart-grid"><SalesChart data={metrics.daily} label="14 days" type="day"/><SalesChart data={metrics.monthly} label="6 months" type="month"/></div><footer className="admin-report-footer"><span>Tappy sales report</span><span>Generated {new Intl.DateTimeFormat('en-PH', { dateStyle:'long' }).format(new Date())}</span></footer></section>}
+      {adminView === 'reports' && <section className="admin-analytics" aria-labelledby="analytics-title"><header><h2 id="analytics-title">Customer journey</h2><span>Last {analyticsMetrics.periodDays} days</span></header><div className="analytics-funnel"><div><span>Homepage visits</span><strong>{analyticsMetrics.homepageVisits}</strong><small>{analyticsMetrics.homepageVisitors} visitors</small></div><div><span>Order clicks</span><strong>{analyticsMetrics.orderClicks}</strong><small>{analyticsMetrics.homepageVisits ? Math.round((analyticsMetrics.orderClicks / analyticsMetrics.homepageVisits) * 100) : 0}% of visits</small></div><div><span>Checkout starts</span><strong>{analyticsMetrics.checkoutStarts}</strong><small>{analyticsMetrics.orderClicks ? Math.round((analyticsMetrics.checkoutStarts / analyticsMetrics.orderClicks) * 100) : 0}% of clicks</small></div><div><span>Orders completed</span><strong>{analyticsMetrics.completedOrders}</strong><small>{analyticsMetrics.checkoutStarts ? Math.round((analyticsMetrics.completedOrders / analyticsMetrics.checkoutStarts) * 100) : 0}% of checkouts</small></div><div><span>Profile visits</span><strong>{analyticsMetrics.profileVisits}</strong><small>{analyticsMetrics.profileVisitors} visitors</small></div></div></section>}
       {adminView === 'overview' && <section className="admin-overview-grid" aria-label="Operations overview"><article><header><h2>Attention</h2><span>Live</span></header><button type="button" onClick={() => showOrders('payment_review')}><span>Payment proofs</span><strong>{metrics.payment}</strong></button><button type="button" onClick={() => showOrders('to_fulfill')}><span>To fulfill</span><strong>{metrics.fulfillment}</strong></button><button type="button" onClick={() => showOrders()}><span>Unread</span><strong>{metrics.unread}</strong></button></article><article><header><h2>Recent orders</h2><button type="button" onClick={() => showOrders()}>View all</button></header>{orders.slice(0,5).map((order) => <button type="button" className="overview-order" onClick={() => { showOrders(); setSelectedId(order.id) }} key={order.id}><span><b>{order.order_number}</b><small>{order.customer_name}</small></span><span><b>{money(order.total)}</b><small>{humanize(order.payment_status)}</small></span></button>)}</article></section>}
       {adminView === 'pages' && <section className="admin-pages-workspace">
         <aside className="admin-pages-list"><header><strong>Managed pages</strong><button type="button" onClick={newPage}><Plus size={16}/></button></header>{pages.length ? pages.map((page) => <button type="button" className={selectedPageId === page.id ? 'active' : ''} onClick={() => editPage(page)} key={page.id}><span><b>{page.display_name}</b><small>{page.orders?.order_number || 'No linked order'}</small></span><em data-page-status={page.status}>{page.status}</em></button>) : <p>No pages yet.</p>}</aside>
