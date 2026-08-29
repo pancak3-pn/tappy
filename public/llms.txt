@@ -1,0 +1,36 @@
+# Tappy
+
+> One tap. Every connection.
+
+Tappy is a smart, reusable NFC digital business card provider based in the Philippines. It allows professionals, freelancers, cafes, shops, clinics, and businesses to share their contact information, social media links, Google Reviews, Google Maps locations, menus, booking links, and websites with a single tap on an NFC-enabled smartphone.
+
+## Key Information
+
+- **Product**: Tappy NFC Card (matte finish, NFC chip + printed backup QR code)
+- **Price**: Starting at ₱199 (one-time purchase, no subscription required)
+- **App Requirements**: No app required for either the cardholder or the person tapping
+- **Country**: Philippines (ships nationwide to Luzon, Visayas, and Mindanao)
+- **Shipping Rates**: Luzon (₱80), Visayas (₱100), Mindanao (₱120)
+- **Payment Method**: GCash QR payment (secure manual verification)
+- **Customization**: Online profile editor with instant updates, customizable links, photo, bio, and social links
+
+## Core Features
+
+- **Tap to Share**: Tap against any NFC-enabled smartphone to instantly open your digital profile in the phone's browser.
+- **QR Code Backup**: Every card includes a printed QR code for devices without NFC.
+- **Reusable & Dynamic**: Update your contact details, destination links, or branding anytime via a secure private link without replacing the physical card.
+- **Up to 8 Social & Business Links**: Facebook, Instagram, LinkedIn, Google Reviews, Google Maps, Booking/Calendar, Portfolio, Website, and more.
+
+## Pages & Resources
+
+- [Homepage](https://www.tappycard.tech/): Overview of Tappy NFC cards and live interactive demos.
+- [FAQs](https://www.tappycard.tech/faqs): Common questions about compatibility, pricing, shipping, and usage.
+- [Order Page](https://www.tappycard.tech/order): Purchase a white Tappy NFC card with GCash checkout.
+- [Privacy Policy](https://www.tappycard.tech/privacy): Details on data protection and Philippine DPA compliance.
+- [Terms of Service](https://www.tappycard.tech/terms): Terms regarding ordering, shipping, and managed profiles.
+
+## Contact
+
+- Email: hello@tappycard.tech
+- Facebook: https://www.facebook.com/profile.php?id=61593846634611
+- Instagram: https://www.instagram.com/tappycardph/
