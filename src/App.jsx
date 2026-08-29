@@ -4,6 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
 import AdminDashboard from './AdminDashboard'
 import TappyPage from './TappyPage'
+import PublicPage from './PublicPages'
 import { track } from './analytics'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, CheckCircle, Compass, CreditCard, FacebookLogo, FileText, Globe,
@@ -33,11 +34,6 @@ function NotFound() {
       <a className="button" href="/">Return home</a>
     </section>
   </main>
-}
-
-function StaticPageRedirect({ href }) {
-  useEffect(() => { window.location.replace(href) }, [href])
-  return null
 }
 
 function Header({ staticNav = false, checkout = false }) {
@@ -351,7 +347,7 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/how-it-works">How it works</a><a href="/#business">For business</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycard.tech/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines</span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/how-it-works">How it works</a><a href="/#business">For business</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycardph/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines  <span role="img" aria-label="Philippine flag">🇵🇭</span></span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
@@ -359,9 +355,11 @@ export default function App() {
   const orderPage = currentPath === '/order'
   const adminPage = currentPath === '/r'
   const howItWorksPage = currentPath === '/how-it-works'
+  const privacyPage = currentPath === '/privacy'
+  const termsPage = currentPath === '/terms'
   const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
   const managedPage = Boolean(publicPageId)
-  const unknownPage = !['','/order','/r','/how-it-works'].includes(currentPath) && !managedPage
+  const unknownPage = !['','/order','/r','/how-it-works','/privacy','/terms'].includes(currentPath) && !managedPage
   useEffect(() => {
     if (currentPath === '') track('homepage_view')
     if (orderPage) track('checkout_start')
@@ -372,7 +370,7 @@ export default function App() {
     return () => document.removeEventListener('click', trackOrderClick)
   }, [currentPath, orderPage])
   useGSAP(() => {
-    if (orderPage || adminPage || howItWorksPage || managedPage || unknownPage) return undefined
+    if (orderPage || adminPage || managedPage || unknownPage) return undefined
     const media = gsap.matchMedia()
     media.add('(min-width: 901px) and (prefers-reduced-motion: no-preference)', () => {
       gsap.utils.toArray('.gsap-media').forEach((element) => {
@@ -393,25 +391,35 @@ export default function App() {
       )
     })
     return () => media.revert()
-  }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, managedPage, unknownPage] })
+  }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, privacyPage, termsPage, managedPage, unknownPage] })
   useEffect(() => {
-    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : 'Tappy NFC Card Philippines | One Tap, Every Connection'
+    const publicMeta = howItWorksPage ? ['How Tappy Works | NFC Card Philippines','Learn how Tappy opens profiles, reviews, maps, menus, bookings and websites with one tap.','https://www.tappycard.tech/how-it-works'] : privacyPage ? ['Privacy Policy | Tappy','Read how Tappy collects, uses, protects and shares personal information.','https://www.tappycard.tech/privacy'] : termsPage ? ['Terms of Service | Tappy','Read the terms governing Tappy cards, payments, delivery and managed profiles.','https://www.tappycard.tech/terms'] : null
+    document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : publicMeta?.[0] || 'Tappy NFC Card Philippines | One Tap, Every Connection'
     let robots = document.querySelector('meta[name="robots"]')
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
     robots.content = unknownPage || adminPage || managedPage || orderPage ? 'noindex,nofollow,noarchive' : 'index,follow,max-image-preview:large'
     const canonical = document.querySelector('link[rel="canonical"]')
-    canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : 'https://www.tappycard.tech/')
-    const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : 'Share contact details, social profiles, reviews, menus, booking links and websites instantly with a reusable Tappy NFC digital business card. No app required.'
+    canonical?.setAttribute('href', managedPage ? window.location.href : orderPage ? 'https://www.tappycard.tech/order' : publicMeta?.[2] || 'https://www.tappycard.tech/')
+    const description = orderPage ? 'Order your white Tappy NFC card and submit your GCash payment securely.' : publicMeta?.[1] || 'Share contact details, social profiles, reviews, menus, booking links and websites instantly with a reusable Tappy NFC digital business card. No app required.'
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', document.title)
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', description)
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', canonical?.getAttribute('href') || window.location.href)
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f7f6f2')
+    document.querySelectorAll('[aria-label="Philippine flag"]').forEach((flag) => {
+      flag.textContent = ''
+      flag.classList.add('fi','fi-ph')
+    })
     const elements = document.querySelectorAll('[data-fade]')
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => entry.target.classList.toggle('is-visible', entry.isIntersecting))
     }, { threshold:0.14, rootMargin:'0px 0px -5% 0px' })
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [adminPage, managedPage, orderPage, unknownPage])
-  if (howItWorksPage) return <StaticPageRedirect href="/how-it-works.html"/>
+  }, [adminPage, howItWorksPage, managedPage, orderPage, privacyPage, termsPage, unknownPage])
+  if (howItWorksPage) return <div ref={appRef}><PublicPage type="how" Header={Header} Footer={Footer}/></div>
+  if (privacyPage) return <div ref={appRef}><PublicPage type="privacy" Header={Header} Footer={Footer}/></div>
+  if (termsPage) return <div ref={appRef}><PublicPage type="terms" Header={Header} Footer={Footer}/></div>
   if (unknownPage) return <NotFound/>
   if (managedPage) return <TappyPage publicId={publicPageId}/>
   if (adminPage) return <div ref={appRef}><AdminDashboard/></div>

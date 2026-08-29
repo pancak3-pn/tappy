@@ -38,7 +38,9 @@
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/how-it-works", "destination": "/how-it-works.html" },
+    { "source": "/how-it-works", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/index.html" },
+    { "source": "/terms", "destination": "/index.html" },
     { "source": "/order", "destination": "/index.html" },
     { "source": "/r", "destination": "/index.html" },
     { "source": "/p/:path*", "destination": "/index.html" }
