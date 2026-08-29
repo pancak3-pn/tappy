@@ -3671,6 +3671,14 @@ body:has(.not-found) {
   line-height: 1.45;
 }
 
+.profile-crop-error {
+  display: block;
+  margin: 8px 0 0;
+  color: #a1261c;
+  font-size: .78rem;
+  line-height: 1.4;
+}
+
 .profile-crop-dialog>footer {
   margin-top: 20px;
   display: flex;

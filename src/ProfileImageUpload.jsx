@@ -155,7 +155,7 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
     </div>
     {pending && <div className="profile-image-pending"><span>{pending === 'remove' ? 'Photo will be removed when you save.' : 'Photo ready to save.'}</span><button type="button" onClick={clearPending} disabled={disabled}>Undo</button></div>}
     <input ref={inputRef} className="profile-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage}/>
-    {error && <small className="profile-image-error" role="alert">{error}</small>}
+    {error && !source && <small className="profile-image-error" role="alert">{error}</small>}
     {source && <div className="profile-crop-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) closeCrop() }}>
       <section className="profile-crop-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-crop-title">
         <header><div><span>Profile photo</span><h2 id="profile-crop-title">Crop your image</h2></div><button type="button" onClick={closeCrop} disabled={busy} aria-label="Close image cropper"><X size={20}/></button></header>
@@ -165,7 +165,8 @@ export default function ProfileImageUpload({ value, name = 'Profile photo', disa
         </div>
         <label className="profile-crop-zoom"><span>Zoom</span><input type="range" min="1" max="3" step="0.01" value={crop.zoom} onChange={(event) => updateZoom(event.target.value)}/></label>
         <p>Drag the image to choose what appears inside the square profile photo.</p>
-        <footer><button type="button" onClick={closeCrop} disabled={busy}>Cancel</button><button type="button" className="profile-crop-apply" onClick={applyCrop} disabled={busy || !imageSize.width}><Check size={17}/>{busy ? 'Preparing...' : 'Use photo'}</button></footer>
+        {error && <small className="profile-crop-error" role="alert">{error}</small>}
+        <footer><button type="button" onClick={closeCrop} disabled={busy}>Cancel</button><button type="button" className="profile-crop-apply" onClick={applyCrop} disabled={busy || !imageSize.width}><Check size={17}/>{busy ? 'Preparing…' : 'Use photo'}</button></footer>
       </section>
     </div>}
   </div>
