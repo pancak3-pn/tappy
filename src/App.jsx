@@ -46,7 +46,7 @@ function Header({ staticNav = false, checkout = false }) {
       {checkout && <span className="checkout-label">Secure checkout</span>}
       <div className={`nav-links ${open ? 'open' : ''}`} id="main-menu">
         <a href="/#products" onClick={() => setOpen(false)}>Products</a>
-        <a href="/how-it-works" onClick={() => setOpen(false)}>How it works</a>
+        <a href="/faqs" onClick={() => setOpen(false)}>FAQs</a>
         <a href="/#business" onClick={() => setOpen(false)}>Use cases</a>
         <a href="/#pricing" onClick={() => setOpen(false)}>Pricing</a>
       </div>
@@ -352,21 +352,21 @@ function OrderFlow() {
   </section>
 }
 
-function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/how-it-works">How it works</a><a href="/#business">For business</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycardph/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines  <span role="img" aria-label="Philippine flag">🇵🇭</span></span></div></footer> }
+function Footer() { return <footer className="footer"><div className="shell footer-grid"><div><Logo/><p>One tap. Every connection.</p></div><div><b>Explore</b><a href="/#products">Products</a><a href="/faqs">FAQs</a><a href="/#business">For business</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div><div><b>Contact</b><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">hello@tappycard.tech</a><a className="footer-social-link" href="https://www.facebook.com/profile.php?id=61593846634611" target="_blank" rel="noreferrer" aria-label="Tappy on Facebook"><FacebookLogo size={18} weight="fill" aria-hidden="true"/>Facebook</a><a className="footer-social-link" href="https://www.instagram.com/tappycardph/" target="_blank" rel="noreferrer" aria-label="Tappy on Instagram"><InstagramLogo size={18} weight="bold" aria-hidden="true"/>Instagram</a></div></div><div className="shell footer-bottom"><span>© 2026 Tappy</span><span>Made in the Philippines  <span role="img" aria-label="Philippine flag">🇵🇭</span></span></div></footer> }
 
 export default function App() {
   const appRef = useRef(null)
   const currentPath = window.location.pathname.replace(/\/+$/, '')
   const orderPage = currentPath === '/order'
   const adminPage = currentPath === '/r'
-  const howItWorksPage = currentPath === '/how-it-works'
+  const howItWorksPage = currentPath === '/faqs'
   const privacyPage = currentPath === '/privacy'
   const termsPage = currentPath === '/terms'
   const publicPageId = currentPath.match(/^\/p\/([A-Za-z0-9_-]{22})$/)?.[1] || ''
   const customerEditToken = currentPath.match(/^\/edit\/([A-Za-z0-9_-]{43})$/)?.[1] || ''
   const customerEditor = Boolean(customerEditToken)
   const managedPage = Boolean(publicPageId)
-  const unknownPage = !['','/order','/r','/how-it-works','/privacy','/terms'].includes(currentPath) && !managedPage && !customerEditor
+  const unknownPage = !['','/order','/r','/faqs','/privacy','/terms'].includes(currentPath) && !managedPage && !customerEditor
   useEffect(() => {
     if (currentPath === '') track('homepage_view')
     if (orderPage) track('checkout_start')
@@ -400,7 +400,7 @@ export default function App() {
     return () => media.revert()
   }, { scope:appRef, dependencies:[orderPage, adminPage, howItWorksPage, privacyPage, termsPage, managedPage, customerEditor, unknownPage] })
   useEffect(() => {
-    const publicMeta = howItWorksPage ? ['How Tappy Works | NFC Card Philippines','Learn how Tappy opens profiles, reviews, maps, menus, bookings and websites with one tap.','https://www.tappycard.tech/how-it-works'] : privacyPage ? ['Privacy Policy | Tappy','Read how Tappy collects, uses, protects and shares personal information.','https://www.tappycard.tech/privacy'] : termsPage ? ['Terms of Service | Tappy','Read the terms governing Tappy cards, payments, delivery and managed profiles.','https://www.tappycard.tech/terms'] : null
+    const publicMeta = howItWorksPage ? ['FAQs | Tappy NFC Card Philippines','Frequently asked questions about Tappy NFC Cards — how they work, pricing, shipping, and what you can share.','https://www.tappycard.tech/faqs'] : privacyPage ? ['Privacy Policy | Tappy','Read how Tappy collects, uses, protects and shares personal information.','https://www.tappycard.tech/privacy'] : termsPage ? ['Terms of Service | Tappy','Read the terms governing Tappy cards, payments, delivery and managed profiles.','https://www.tappycard.tech/terms'] : null
     document.title = unknownPage ? 'Page not found | Tappy' : adminPage ? 'Tappy Admin' : customerEditor ? 'Edit your Tappy Page' : managedPage ? 'Tappy Page' : orderPage ? 'Order Tappy | Tappy' : publicMeta?.[0] || 'Tappy NFC Card Philippines | One Tap, Every Connection'
     let robots = document.querySelector('meta[name="robots"]')
     if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots) }
