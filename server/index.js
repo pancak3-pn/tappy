@@ -104,7 +104,7 @@ function cleanPageLinks(value) {
   })).filter((link) => link.label && link.url)
 }
 function customerPageFields(body) {
-  const allowed = new Set(['displayName','headline','bio','photoUrl','email','phone','location','accent','backgroundTexture','links'])
+  const allowed = new Set(['displayName','headline','bio','photoUrl','email','phone','location','accent','backgroundTexture','template','links'])
   return pageFields(Object.fromEntries(Object.entries(body || {}).filter(([key]) => allowed.has(key))), true)
 }
 function hashEditToken(token) { return createHash('sha256').update(token).digest('hex') }
@@ -151,6 +151,7 @@ function pageFields(body, partial = false) {
   assign('location', clean(body.location, 140) || null)
   assign('accent', ['forest','ink','blue'].includes(body.accent) ? body.accent : 'forest')
   assign('backgroundTexture', ['clean','linen','silver','forest-grain','blueprint'].includes(body.backgroundTexture) ? body.backgroundTexture : 'clean')
+  assign('template', ['classic','split','compact'].includes(body.template) ? body.template : 'classic')
   assign('links', cleanPageLinks(body.links))
   assign('internalNotes', clean(body.internalNotes, 1000) || null)
   assign('orderId', /^[0-9a-f-]{36}$/i.test(body.orderId || '') ? body.orderId : null)
@@ -583,7 +584,7 @@ async function requestHandler(request, response) {
       .select('*')
       .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
     if (error || !data) return send(response, 404, { error:'Page not found.' })
-    return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', links:data.links, updated_at:data.updated_at } })
+    return send(response, 200, { page:{ public_id:data.public_id, display_name:data.display_name, headline:data.headline, bio:data.bio, photo_url:data.photo_url, email:data.email, phone:data.phone, location:data.location, accent:data.accent, background_texture:data.background_texture || 'clean', template:data.template || 'classic', links:data.links, updated_at:data.updated_at } })
   }
 
   const customerPhotoMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})\/photo$/)
@@ -595,7 +596,7 @@ async function requestHandler(request, response) {
     if (!access || access.revoked_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This editing link is invalid or expired.' })
     const { data:page, error:pageError } = await supabase.from('tappy_pages').select('*').eq('id', access.page_id).single()
     if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
-    const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, links:page.links }
+    const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, template:page.template, links:page.links }
     const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
     if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
     if (request.method === 'DELETE') {
@@ -633,14 +634,14 @@ async function requestHandler(request, response) {
     if (pageError || !page || page.status === 'disabled') return send(response, 404, { error:'This Tappy Page is unavailable.' })
     if (request.method === 'GET') {
       await supabase.from('page_edit_tokens').update({ last_used_at:new Date().toISOString() }).eq('id', access.id)
-      return send(response, 200, { page:{ display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture || 'clean', links:page.links, public_id:page.public_id }, expiresAt:access.expires_at })
+      return send(response, 200, { page:{ display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links, public_id:page.public_id }, expiresAt:access.expires_at })
     }
     try {
       const body = await readJson(request)
       const fields = customerPageFields(body)
       if (fields.display_name !== undefined && !fields.display_name) return send(response, 400, { error:'Add a display name.' })
       if (!Object.keys(fields).length) return send(response, 400, { error:'No valid changes supplied.' })
-      const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, links:page.links }
+      const snapshot = { display_name:page.display_name, headline:page.headline, bio:page.bio, photo_url:page.photo_url, email:page.email, phone:page.phone, location:page.location, accent:page.accent, background_texture:page.background_texture, template:page.template, links:page.links }
       const { error:revisionError } = await supabase.from('tappy_page_revisions').insert({ page_id:page.id, changed_by:'customer', snapshot })
       if (revisionError) return send(response, 503, { error:'Page history could not be saved. Run migration 012.' })
       const { data:updated, error:updateError } = await supabase.from('tappy_pages').update(fields).eq('id', page.id).select('*').single()

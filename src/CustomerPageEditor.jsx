@@ -6,7 +6,7 @@ import ProfileImageUpload from './ProfileImageUpload.jsx'
 
 const types = [['website','Website'],['maps','Google Maps'],['facebook','Facebook'],['instagram','Instagram'],['linkedin','LinkedIn'],['reviews','Google Reviews'],['portfolio','Portfolio'],['booking','Booking']]
 const typeLabels = Object.fromEntries(types)
-const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', backgroundTexture:page.background_texture || 'clean', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
+const fromPage = (page = {}) => ({ displayName:page.display_name || '', headline:page.headline || '', bio:page.bio || '', photoUrl:page.photo_url || '', email:page.email || '', phone:page.phone || '', location:page.location || '', accent:page.accent || 'forest', backgroundTexture:page.background_texture || 'clean', template:page.template || 'classic', links:page.links?.length ? page.links : [{ type:'website', label:'Website', url:'' }] })
 const linksToRequest = (links) => links.filter((link) => link.url.trim()).map((link) => ({ type:types.some(([type]) => type === link.type) ? link.type : 'website', label:typeLabels[link.type] || 'Website', url:link.url.trim() }))
 
 function previewInitials(name) {
@@ -155,7 +155,8 @@ export default function CustomerPageEditor({ token }) {
           <ProfileImageUpload value={form.photoUrl} onUpload={() => {}} onRemove={() => {}} deferred onPendingChange={handlePhotoPending}/>
           <div><label>Public email<input type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)}/></label><label>Phone<input value={form.phone} onChange={(e) => updateField('phone', e.target.value)}/></label></div>
           <label>Location<input maxLength="140" value={form.location} onChange={(e) => updateField('location', e.target.value)}/></label>
-          <div><label>Accent<select value={form.accent} onChange={(e) => updateField('accent', e.target.value)}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
+           <div><label>Accent<select value={form.accent} onChange={(e) => updateField('accent', e.target.value)}><option value="forest">Tappy forest</option><option value="ink">Monochrome</option><option value="blue">Cobalt</option></select></label><label>Background<select value={form.backgroundTexture} onChange={(e) => updateField('backgroundTexture', e.target.value)}><option value="clean">Clean white</option><option value="linen">Soft linen</option><option value="silver">Brushed silver</option><option value="forest-grain">Forest grain</option><option value="blueprint">Blueprint grid</option></select></label></div>
+           <fieldset className="customer-template-picker"><legend>Page layout</legend><div className="customer-template-options">{[['classic','Classic','Centered profile'],['split','Split','Photo-led intro'],['compact','Compact','Links first']].map(([value,label,description]) => <label key={value} className={form.template === value ? 'selected' : ''}><input type="radio" name="template" value={value} checked={form.template === value} onChange={(e) => updateField('template', e.target.value)}/><span><strong>{label}</strong><small>{description}</small></span></label>)}</div></fieldset>
           <fieldset><legend>Public links</legend>
             {form.links.slice(0,8).map((link,index) => <div key={index} className="customer-link-row">
               <div className="customer-link-type-wrapper">
@@ -173,7 +174,7 @@ export default function CustomerPageEditor({ token }) {
         <aside className="customer-editor-preview">
           <div className="customer-editor-preview-label"><Eye size={15}/>Live preview</div>
           <div className="customer-preview-phone-shell">
-            <div className="customer-preview-phone" data-accent={form.accent} data-background={form.backgroundTexture}>
+             <div className="customer-preview-phone" data-accent={form.accent} data-background={form.backgroundTexture} data-template={form.template}>
               <header><span>tappy.</span></header>
               <div className="customer-preview-profile">
                 {previewPhoto ? <img src={previewPhoto} alt=""/> : <i>{previewInitials(form.displayName)}</i>}

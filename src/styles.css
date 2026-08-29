@@ -3056,6 +3056,35 @@ body:has(.not-found) {
   gap: 10px;
 }
 
+/* Customer profile templates: same content, three deliberate compositions. */
+.managed-page[data-template="split"] .managed-page-shell { align-items: stretch; }
+.managed-page[data-template="split"] .managed-page-profile { flex-direction: row; justify-content: flex-start; text-align: left; }
+.managed-page[data-template="split"] .managed-page-profile>div { text-align: left; }
+.managed-page[data-template="split"] .managed-page-location { justify-content: flex-start; }
+.managed-page[data-template="split"] .managed-page-bio { margin-left: 0; text-align: left; }
+.managed-page[data-template="split"] .managed-page-actions { margin-left: 0; }
+.managed-page[data-template="compact"] .managed-page-profile { display: grid; grid-template-columns: 82px 1fr; gap: 5px 16px; align-items: center; text-align: left; }
+.managed-page[data-template="compact"] .managed-page-profile>img,
+.managed-page[data-template="compact"] .managed-page-initials { width: 82px; height: 82px; grid-row: span 3; border-radius: 22px; }
+.managed-page[data-template="compact"] .managed-page-profile>div { text-align: left; }
+.managed-page[data-template="compact"] .managed-page-location { justify-content: flex-start; margin-top: 3px; }
+.managed-page[data-template="compact"] .managed-page-bio { margin-top: 28px; text-align: left; }
+.managed-page[data-template="compact"] .managed-page-actions { width: 100%; margin-top: 24px; }
+.managed-page[data-template="compact"] .managed-page-icon-row { justify-content: flex-start; }
+
+@media (max-width: 640px) {
+  .customer-template-options { grid-template-columns: 1fr !important; }
+}
+
+.customer-template-picker { gap: 14px !important; }
+.customer-template-options { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 8px !important; }
+.customer-template-options label { min-height: 74px; padding: 12px; display: flex !important; align-items: flex-start; gap: 9px; border: 1px solid #deddd6; border-radius: 10px; background: #fff; cursor: pointer; transition: border-color .18s ease, background-color .18s ease; }
+.customer-template-options label.selected { border-color: #244a3a; background: #edf3ee; }
+.customer-template-options input { width: auto; min-height: auto; margin-top: 2px; accent-color: #244a3a; }
+.customer-template-options span { display: grid; gap: 4px; }
+.customer-template-options strong { font-size: .75rem; }
+.customer-template-options small { color: #73736c; font-size: .66rem; line-height: 1.3; }
+
 .customer-editor-submit {
   display: flex;
   align-items: center;

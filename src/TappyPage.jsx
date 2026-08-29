@@ -63,6 +63,7 @@ export default function TappyPage({ publicId }) {
       'meta[property="og:url"]':window.location.href,
       'meta[name="twitter:title"]':`${page.display_name} | Tappy`,
       'meta[name="twitter:description"]':description,
+      'meta[property="og:image"]':page.photo_url || '/assets/tappy-personal-card.png',
     }
     Object.entries(values).forEach(([selector, content]) => document.querySelector(selector)?.setAttribute('content', content))
   }, [page, publicId])
@@ -71,7 +72,7 @@ export default function TappyPage({ publicId }) {
   if (state === 'missing') return <main className="managed-page-state"><a className="managed-page-logo" href="/">tappy.</a><h1>Page unavailable.</h1><p>This Tappy Page may be inactive or the link may be incorrect.</p></main>
 
   const updateUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech&su=${encodeURIComponent(`Update request for Tappy Page ${publicId}`)}`
-  return <main className="managed-page" data-accent={page.accent} data-background={page.background_texture || 'clean'}>
+  return <main className="managed-page" data-accent={page.accent} data-background={page.background_texture || 'clean'} data-template={page.template || 'classic'}>
     <div className="managed-page-shell">
       <header><a href="/" aria-label="Tappy home">tappy.</a></header>
       <section className="managed-page-profile">
