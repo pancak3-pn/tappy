@@ -830,7 +830,7 @@ async function requestHandler(request, response) {
     return send(response, 200, { page:managedProfilePayload(data) })
   }
 
-  const nfcTagMatch = url.pathname.match(/^\/api\/t\/([A-Za-z0-9]{6,16})$/i)
+  const nfcTagMatch = url.pathname.match(/^\/(?:api\/)?t\/([A-Za-z0-9]{6,16})$/i)
   if (request.method === 'GET' && nfcTagMatch) {
     const { data:tag, error } = await supabase.from('nfc_tags').select('id,destination_type,destination_url,active').eq('code', nfcTagMatch[1].toUpperCase()).maybeSingle()
     if (error || !tag?.active) return send(response, 404, { error:'This Tappy card is inactive or not registered.' })
