@@ -77,7 +77,8 @@ async function rateLimit(key, limit, windowMs) {
 }
 async function recordIncident({ severity = 'error', source, message, requestId = null }) {
   try {
-    await supabase.from('system_incidents').insert({ severity, source:clean(source, 80), message:clean(message, 500), request_id:clean(requestId, 120) || null })
+    const safeMessage = clean(message, 500).replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email]')
+    await supabase.from('system_incidents').insert({ severity, source:clean(source, 80) || 'unknown', message:safeMessage || 'Unknown error', request_id:clean(requestId, 120) || null })
   } catch (error) { console.error('Incident logging failed:', error.message) }
 }
 
@@ -1197,15 +1198,22 @@ async function requestHandler(request, response) {
     return send(response, 201, { orderNumber:data.order_number, total:data.total, paymentMethod:data.payment_method, paymentStatus:data.payment_status, orderStatus:data.order_status, createdAt:data.created_at, emailStatus:emailDelivery.status, proofToken:signOrderToken(data.order_number) })
   } catch (error) {
     const status = error instanceof SyntaxError ? 400 : 500
-    if (status === 500) Sentry.captureException(error, { tags:{ operation:'create_order' } })
+    if (status === 500) {
+      await recordIncident({ severity:'error', source:'create_order', message:error.message, requestId:request.headers['x-request-id'] })
+      Sentry.captureException(error, { tags:{ operation:'create_order' } })
+    }
     return send(response, status, { error:status === 400 ? 'Invalid request.' : 'The order could not be saved. Please try again.' })
   }
 }
 
 export async function handler(request, response) {
+  const requestId = clean(request.headers['x-request-id'], 120) || randomUUID()
+  response.setHeader('x-request-id', requestId)
+  request.headers['x-request-id'] = requestId
   try {
     return await requestHandler(request, response)
   } catch (error) {
+    await recordIncident({ severity:'critical', source:`unhandled:${request.method} ${new URL(request.url, 'http://localhost').pathname}`, message:error.message, requestId })
     Sentry.captureException(error, { tags:{ operation:'unhandled_api_request' } })
     await Sentry.flush(2000)
     if (!response.headersSent) return send(response, 500, { error:'The request could not be completed.' })
