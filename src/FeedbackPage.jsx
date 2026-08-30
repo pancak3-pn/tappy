@@ -103,6 +103,14 @@ export default function FeedbackPage() {
       const response = await fetch('/api/feedback/request', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ email }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Something went wrong. Please try again.')
+      if (result.alreadyRequested) {
+        setError('A feedback link has already been sent for this order. Check your email, or wait for that link to expire before requesting another.')
+        return
+      }
+      if (result.alreadySubmitted) {
+        setError('Feedback has already been submitted for this order.')
+        return
+      }
       setStep('sent')
     } catch (requestError) { setError(requestError.message) }
     finally { setSending(false) }
