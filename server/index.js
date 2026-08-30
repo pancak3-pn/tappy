@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/node'
 import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import { managedProfilePayload, normalizeAccentColor, PROFILE_ACCENTS, PROFILE_BACKGROUNDS, PROFILE_TEMPLATES } from '../shared/managed-profile.js'
 import { canTransitionOrder, canTransitionPayment, lifecycleTimestamps, ORDER_STATUSES, PAYMENT_STATUSES } from '../shared/order-lifecycle.js'
+import { paidSalesByRegion } from '../shared/sales-metrics.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -258,6 +259,11 @@ async function sendDeliveryEmail(order) {
   })
 }
 
+function customerMessageHtml({ name, subject, body, orderNumber }) {
+  const paragraphs = escapeHtml(body).split(/\n{2,}/).map((paragraph) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#474b47">${paragraph.replaceAll('\n', '<br>')}</p>`).join('')
+  return `<!doctype html><html><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f2ee"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px"><tr><td style="padding:0 4px 22px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td style="padding:34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 12px;color:#244a3a;font-size:13px;font-weight:700">Order ${escapeHtml(orderNumber)}</p><h1 style="margin:0 0 22px;font-size:30px;line-height:1.1;letter-spacing:-1px">${escapeHtml(subject)}</h1><p style="margin:0 0 16px;font-size:15px;line-height:1.65">Hi ${escapeHtml(name)},</p>${paragraphs}<p style="margin:26px 0 0;font-size:14px;line-height:1.6;color:#626660">Tappy customer support<br><a href="mailto:hello@tappycard.tech" style="color:#244a3a;text-decoration:none">hello@tappycard.tech</a></p></td></tr></table></td></tr></table></body></html>`
+}
+
 async function sendPaymentReminderEmail(order) {
   if (!resendApiKey) return { status:'not_configured', id:null }
   return deliverEmail({
@@ -407,6 +413,45 @@ async function requestHandler(request, response) {
 
   if (url.pathname.startsWith('/api/admin/')) {
     if (!isAdmin(request)) return send(response, 401, { error:'Admin session required.' })
+    if (request.method === 'GET' && url.pathname === '/api/admin/messages') {
+      const { data:threads, error:threadError } = await supabase.from('email_threads').select('*,orders(order_number,order_status,payment_status)').order('last_message_at', { ascending:false }).limit(100)
+      if (threadError) return send(response, 503, { error:'Messages are not configured. Run migration 019.' })
+      const threadIds = threads.map((thread) => thread.id)
+      let messages = []
+      if (threadIds.length) {
+        const { data, error } = await supabase.from('email_messages').select('*').in('thread_id', threadIds).order('created_at', { ascending:true })
+        if (error) return send(response, 503, { error:'Message history could not be loaded.' })
+        messages = data
+      }
+      const byThread = new Map()
+      for (const message of messages) byThread.set(message.thread_id, [...(byThread.get(message.thread_id) || []), message])
+      return send(response, 200, { threads:threads.map((thread) => ({ ...thread, messages:byThread.get(thread.id) || [] })) })
+    }
+    if (request.method === 'POST' && url.pathname === '/api/admin/messages') {
+      if (!resendApiKey) return send(response, 503, { error:'Email delivery is not configured.' })
+      try {
+        const body = await readJson(request, 24_000)
+        const orderId = clean(body.orderId, 36)
+        const subject = clean(body.subject, 180)
+        const bodyText = clean(body.body, 10_000)
+        if (!/^[0-9a-f-]{36}$/i.test(orderId) || !subject || !bodyText) return send(response, 400, { error:'Choose an order and add a subject and message.' })
+        const { data:order, error:orderError } = await supabase.from('orders').select('id,order_number,customer_name,email').eq('id', orderId).single()
+        if (orderError || !order?.email) return send(response, 404, { error:'The customer order could not be found.' })
+        const { data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString() }, { onConflict:'order_id' }).select('*').single()
+        if (threadError) return send(response, 503, { error:'Messages are not configured. Run migration 019.' })
+        const messageId = randomUUID()
+        const { data:message, error:messageError } = await supabase.from('email_messages').insert({ id:messageId, thread_id:thread.id, direction:'outbound', sender_email:emailFrom, recipient_email:order.email, subject, body_text:bodyText, delivery_status:'queued' }).select('*').single()
+        if (messageError) return send(response, 503, { error:'The message could not be saved.' })
+        try {
+          const delivery = await deliverEmail({ to:order.email, subject, text:`Hi ${order.customer_name},\n\n${bodyText}\n\nTappy customer support`, html:customerMessageHtml({ name:order.customer_name, subject, body:bodyText, orderNumber:order.order_number }), idempotencyKey:`admin-message-${messageId}` })
+          const { data:sentMessage } = await supabase.from('email_messages').update({ delivery_status:'sent', provider_email_id:delivery.id }).eq('id', messageId).select('*').single()
+          return send(response, 201, { thread:{ ...thread, orders:{ order_number:order.order_number }, messages:[sentMessage || { ...message, delivery_status:'sent', provider_email_id:delivery.id }] } })
+        } catch (emailError) {
+          await supabase.from('email_messages').update({ delivery_status:'failed' }).eq('id', messageId)
+          return send(response, 502, { error:`Email could not be sent: ${emailError.message}` })
+        }
+      } catch { return send(response, 400, { error:'Invalid message request.' }) }
+    }
     if (request.method === 'GET' && url.pathname === '/api/admin/pages') {
       const { data, error } = await supabase.from('tappy_pages').select('*,orders(order_number,customer_name,email,payment_status)').order('created_at', { ascending:false }).limit(200)
       if (error) return send(response, 503, { error:'Tappy Pages could not be loaded. Run migration 007 if it is not installed.' })
@@ -503,7 +548,7 @@ async function requestHandler(request, response) {
       let page = 0
       while (true) {
         const from = page * pageSize
-        const { data, error } = await supabase.from('orders').select('total,quantity,created_at').eq('payment_status', 'paid').order('created_at', { ascending:true }).range(from, from + pageSize - 1)
+        const { data, error } = await supabase.from('orders').select('total,quantity,created_at,delivery_region').eq('payment_status', 'paid').order('created_at', { ascending:true }).range(from, from + pageSize - 1)
         if (error) return send(response, 503, { error:'Sales metrics could not be loaded.' })
         paidOrders.push(...data)
         if (data.length < pageSize) break
@@ -529,7 +574,7 @@ async function requestHandler(request, response) {
         if (dailyMap.has(dayKey)) { dailyMap.get(dayKey).revenue += amount; dailyMap.get(dayKey).orders += 1 }
         if (monthlyMap.has(monthKey)) { monthlyMap.get(monthKey).revenue += amount; monthlyMap.get(monthKey).orders += 1 }
       })
-      return send(response, 200, { metrics:{ revenue, paid:paidOrders.length, cards, average:paidOrders.length ? revenue / paidOrders.length : 0, daily, monthly } })
+      return send(response, 200, { metrics:{ revenue, paid:paidOrders.length, cards, average:paidOrders.length ? revenue / paidOrders.length : 0, daily, monthly, regions:paidSalesByRegion(paidOrders) } })
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/analytics') {
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
@@ -571,13 +616,17 @@ async function requestHandler(request, response) {
       return send(response, 200, { orders:data, total, page, limit, totalPages:Math.max(1, Math.ceil(total / limit)) })
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/order-counts') {
-      const [unread, payment, fulfillment] = await Promise.all([
+      const [all, unread, payment, fulfillment, inProgress, completed, cancelled] = await Promise.all([
+        supabase.from('orders').select('id', { head:true, count:'exact' }),
         supabase.from('orders').select('id', { head:true, count:'exact' }).is('admin_read_at', null),
         supabase.from('orders').select('id', { head:true, count:'exact' }).eq('payment_status', 'proof_submitted'),
-        supabase.from('orders').select('id', { head:true, count:'exact' }).in('order_status', ['pending_fulfillment', 'processing']),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).eq('order_status', 'pending_fulfillment'),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).in('order_status', ['processing', 'shipped']),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).eq('order_status', 'delivered'),
+        supabase.from('orders').select('id', { head:true, count:'exact' }).eq('order_status', 'cancelled'),
       ])
-      if (unread.error || payment.error || fulfillment.error) return send(response, 503, { error:'Order counts could not be loaded.' })
-      return send(response, 200, { counts:{ unread:unread.count ?? 0, payment:payment.count ?? 0, fulfillment:fulfillment.count ?? 0 } })
+      if ([all, unread, payment, fulfillment, inProgress, completed, cancelled].some((result) => result.error)) return send(response, 503, { error:'Order counts could not be loaded.' })
+      return send(response, 200, { counts:{ all:all.count ?? 0, unread:unread.count ?? 0, payment:payment.count ?? 0, fulfillment:fulfillment.count ?? 0, inProgress:inProgress.count ?? 0, completed:completed.count ?? 0, cancelled:cancelled.count ?? 0 } })
     }
     const proofMatch = url.pathname.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/payment-proof$/i)
     if (request.method === 'GET' && proofMatch) {

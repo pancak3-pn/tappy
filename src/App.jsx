@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
@@ -379,6 +379,10 @@ export default function App() {
   const customerEditor = Boolean(customerEditToken)
   const managedPage = Boolean(publicPageId)
   const unknownPage = !['', '/order', '/r', '/faqs', '/privacy', '/terms'].includes(currentPath) && !managedPage && !customerEditor
+  useLayoutEffect(() => {
+    document.body.classList.toggle('admin-mode', adminPage)
+    return () => document.body.classList.remove('admin-mode')
+  }, [adminPage])
   useEffect(() => {
     if (currentPath === '') track('homepage_view')
     if (orderPage) track('checkout_start')
@@ -442,7 +446,7 @@ export default function App() {
   if (unknownPage) return <NotFound />
   if (managedPage) return <React.Suspense fallback={<RouteLoading/>}><TappyPage publicId={publicPageId}/></React.Suspense>
   if (customerEditor) return <React.Suspense fallback={<RouteLoading/>}><CustomerPageEditor token={customerEditToken}/></React.Suspense>
-  if (adminPage) return <div ref={appRef}><React.Suspense fallback={<RouteLoading/>}><AdminDashboard/></React.Suspense></div>
+  if (adminPage) return <div className="admin-route" ref={appRef}><React.Suspense fallback={<RouteLoading/>}><AdminDashboard/></React.Suspense></div>
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout /><OrderFlow /><div className="order-page-footer shell"><Logo /><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header /><BackToTop /><div className="site-curtain"><Hero /><HowItWorks /><DestinationSwitcher /><Products /><UseCaseTicker /><Pricing /></div><div className="footer-reveal"><div className="footer-stack"><Footer /></div></div></main>
 }
