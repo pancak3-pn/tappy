@@ -63,13 +63,14 @@ function clientIp(request) {
   if (typeof forwarded === 'string' && forwarded.length) return forwarded.split(',')[0].trim()
   return request.socket?.remoteAddress || 'unknown'
 }
-function rateLimit(key, limit, windowMs) {
+async function rateLimit(key, limit, windowMs) {
+  const { data, error } = await supabase.rpc('consume_rate_limit', { p_key:key, p_limit:limit, p_window_seconds:Math.ceil(windowMs / 1000) })
+  if (!error && typeof data === 'boolean') return data
   const now = Date.now()
   let bucket = rateBuckets.get(key)
   if (!bucket || now >= bucket.resetAt) {
     if (rateBuckets.size > 5000) for (const [entryKey, entry] of rateBuckets) if (now >= entry.resetAt) rateBuckets.delete(entryKey)
-    bucket = { count:0, resetAt:now + windowMs }
-    rateBuckets.set(key, bucket)
+    bucket = { count:0, resetAt:now + windowMs }; rateBuckets.set(key, bucket)
   }
   bucket.count += 1
   return bucket.count <= limit
@@ -497,7 +498,7 @@ async function requestHandler(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/api/admin/login') {
     if (!adminPassword) return send(response, 503, { error:'Admin access is not configured. Add ADMIN_PASSWORD to .env.' })
-    if (!rateLimit(`login:${clientIp(request)}`, 5, 15 * 60 * 1000)) return send(response, 429, { error:'Too many sign-in attempts. Try again in 15 minutes.' })
+    if (!(await rateLimit(`login:${clientIp(request)}`, 5, 15 * 60 * 1000))) return send(response, 429, { error:'Too many sign-in attempts. Try again in 15 minutes.' })
     try {
       const body = await readJson(request)
       if (!safeEqual(clean(body.password, 200), adminPassword)) return send(response, 401, { error:'Incorrect password.' })
@@ -914,7 +915,7 @@ async function requestHandler(request, response) {
 
   const customerPhotoMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})\/photo$/)
   if (customerPhotoMatch && ['POST','DELETE'].includes(request.method)) {
-    if (!rateLimit(`page-photo:${clientIp(request)}`, 30, 60 * 60 * 1000)) return send(response, 429, { error:'Too many photo requests. Try again later.' })
+    if (!(await rateLimit(`page-photo:${clientIp(request)}`, 30, 60 * 60 * 1000))) return send(response, 429, { error:'Too many photo requests. Try again later.' })
     const tokenHash = hashEditToken(customerPhotoMatch[1])
     const { data:access, error:accessError } = await supabase.from('page_edit_tokens').select('id,page_id,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle()
     if (accessError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
@@ -950,7 +951,7 @@ async function requestHandler(request, response) {
 
   const customerEditMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})$/)
   if (customerEditMatch && ['GET','PATCH'].includes(request.method)) {
-    if (!rateLimit(`page-edit:${clientIp(request)}`, 120, 60 * 60 * 1000)) return send(response, 429, { error:'Too many page requests. Try again later.' })
+    if (!(await rateLimit(`page-edit:${clientIp(request)}`, 120, 60 * 60 * 1000))) return send(response, 429, { error:'Too many page requests. Try again later.' })
     const tokenHash = hashEditToken(customerEditMatch[1])
     const { data:access, error:accessError } = await supabase.from('page_edit_tokens').select('id,page_id,expires_at,revoked_at').eq('token_hash', tokenHash).maybeSingle()
     if (accessError) return send(response, 503, { error:'Customer editing is not configured. Run migration 012.' })
@@ -1034,7 +1035,7 @@ async function requestHandler(request, response) {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/feedback/request') {
-    if (!rateLimit(`feedback-request:${clientIp(request)}`, 5, 60 * 60 * 1000)) return send(response, 429, { error:'Too many feedback requests. Try again later.' })
+    if (!(await rateLimit(`feedback-request:${clientIp(request)}`, 5, 60 * 60 * 1000))) return send(response, 429, { error:'Too many feedback requests. Try again later.' })
     try {
       const body = await readJson(request, 4_000)
       const email = clean(body.email, 160).toLowerCase()
@@ -1045,7 +1046,7 @@ async function requestHandler(request, response) {
         .order('created_at', { ascending:false }).limit(1).maybeSingle()
       if (orderError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
       if (!order) return send(response, 200, { ok:true })
-      if (!rateLimit(`feedback-request-email:${email}`, 3, 60 * 60 * 1000)) return send(response, 200, { ok:true })
+      if (!(await rateLimit(`feedback-request-email:${email}`, 3, 60 * 60 * 1000))) return send(response, 200, { ok:true })
       const { data:existing } = await supabase.from('feedback').select('id').eq('order_id', order.id).maybeSingle()
       if (existing) return send(response, 409, { error:'Feedback has already been submitted for this order.', alreadySubmitted:true })
       const { data:activeToken, error:activeTokenError } = await supabase.from('feedback_tokens')
@@ -1062,6 +1063,10 @@ async function requestHandler(request, response) {
       catch (emailError) {
         Sentry.captureException(emailError, { tags:{ operation:'feedback_link_email' } })
         emailDelivery = { status:'failed', id:null }
+      }
+      if (emailDelivery.status === 'failed') {
+        await supabase.from('feedback_tokens').delete().eq('token_hash', hashEditToken(rawToken))
+        return send(response, 503, { error:'The feedback email could not be delivered. Please try again later.' })
       }
       return send(response, 200, { ok:true, emailStatus:emailDelivery.status })
     } catch { return send(response, 400, { error:'Invalid feedback request.' }) }
@@ -1080,7 +1085,7 @@ async function requestHandler(request, response) {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/feedback/submit') {
-    if (!rateLimit(`feedback-submit:${clientIp(request)}`, 10, 60 * 60 * 1000)) return send(response, 429, { error:'Too many submissions. Try again later.' })
+    if (!(await rateLimit(`feedback-submit:${clientIp(request)}`, 10, 60 * 60 * 1000))) return send(response, 429, { error:'Too many submissions. Try again later.' })
     try {
       const body = await readJson(request, 16_000)
       const rawToken = clean(body.token, 64)
@@ -1127,7 +1132,7 @@ async function requestHandler(request, response) {
   }
 
   if (request.method !== 'POST' || url.pathname !== '/api/orders') return send(response, 404, { error:'Not found' })
-  if (!rateLimit(`orders:${clientIp(request)}`, 10, 60 * 60 * 1000)) return send(response, 429, { error:'Too many orders submitted from this connection. Please try again later.' })
+  if (!(await rateLimit(`orders:${clientIp(request)}`, 10, 60 * 60 * 1000))) return send(response, 429, { error:'Too many orders submitted from this connection. Please try again later.' })
 
   try {
     const body = await readJson(request)
