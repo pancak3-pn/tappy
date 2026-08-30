@@ -408,7 +408,7 @@ function validNfcDestination(type, value) {
 
 async function requestHandler(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1')
-  if (request.method === 'GET' && request.url === '/api/health') {
+  if (request.method === 'GET' && url.pathname === '/api/health') {
     const { error } = await supabase.from('orders').select('id', { head:true, count:'exact' }).limit(1)
     return send(response, error ? 503 : 200, error ? { ok:false, error:'Supabase unavailable or schema not installed.' } : { ok:true, backend:'supabase' })
   }

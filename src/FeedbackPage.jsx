@@ -141,7 +141,7 @@ export default function FeedbackPage() {
         <section className="feedback-panel">
           <form onSubmit={requestLink}>
             <label>Order email
-              <input type="email" required value={email} maxLength="160" placeholder="The email used on your Tappy order" onChange={(event) => setEmail(event.target.value)} />
+              <input type="email" name="email" autoComplete="email" spellCheck={false} required value={email} maxLength="160" placeholder="The email used on your Tappy order" onChange={(event) => setEmail(event.target.value)} />
             </label>
             <p className="feedback-hint">Feedback is limited to verified customers. If your order email matches, we will send a private, one-time feedback link.</p>
             {error && <p className="feedback-error" role="alert"><WarningCircle size={16} /> {error}</p>}
@@ -165,10 +165,10 @@ export default function FeedbackPage() {
             <RatingStars label="Product (your Tappy card)" value={ratings.product} onChange={(value) => setRatings({ ...ratings, product:value })} />
             <RatingStars label="Service (ordering, payment, delivery)" value={ratings.service} onChange={(value) => setRatings({ ...ratings, service:value })} />
             <label>Display name (shown publicly)
-              <input value={displayName} maxLength="60" placeholder="e.g., Juan D. or your business name" onChange={(event) => setDisplayName(event.target.value)} />
+              <input name="displayName" autoComplete="name" value={displayName} maxLength="60" placeholder="e.g., Juan D. or your business name" onChange={(event) => setDisplayName(event.target.value)} />
             </label>
             <label>Your comments (optional)
-              <textarea value={comment} maxLength="2000" rows="5" placeholder="What did you like? What can we improve?" onChange={(event) => setComment(event.target.value)} />
+              <textarea name="comment" value={comment} maxLength="2000" rows="5" placeholder="What did you like? What can we improve?" onChange={(event) => setComment(event.target.value)} />
             </label>
             <span className="feedback-char-count">{comment.length} / 2000</span>
             {error && <p className="feedback-error" role="alert"><WarningCircle size={16} /> {error}</p>}
