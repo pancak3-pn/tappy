@@ -75,6 +75,11 @@ async function rateLimit(key, limit, windowMs) {
   bucket.count += 1
   return bucket.count <= limit
 }
+async function recordIncident({ severity = 'error', source, message, requestId = null }) {
+  try {
+    await supabase.from('system_incidents').insert({ severity, source:clean(source, 80), message:clean(message, 500), request_id:clean(requestId, 120) || null })
+  } catch (error) { console.error('Incident logging failed:', error.message) }
+}
 
 function send(response, status, payload) {
   response.writeHead(status, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' })
@@ -491,6 +496,7 @@ async function requestHandler(request, response) {
       if (messageError) throw messageError
       return send(response, 200, { received:true, stored:true, orderNumber:order.order_number })
     } catch (error) {
+      await recordIncident({ severity:'error', source:'resend_inbound_webhook', message:error.message, requestId:request.headers['x-request-id'] })
       Sentry.captureException(error, { tags:{ operation:'resend_inbound_webhook' } })
       return send(response, 500, { error:'Inbound email could not be processed.' })
     }
@@ -510,15 +516,16 @@ async function requestHandler(request, response) {
     if (!isAdmin(request)) return send(response, 401, { error:'Admin session required.' })
     if (request.method === 'GET' && url.pathname === '/api/admin/system-health') {
       const checkedAt = new Date().toISOString()
-      const [{ error:databaseError }, { count:failedEmails, error:emailError }, { count:recentWebhooks, error:webhookError }] = await Promise.all([
+      const [{ error:databaseError }, { count:failedEmails, error:emailError }, { count:recentWebhooks, error:webhookError }, { data:incidents, error:incidentError }] = await Promise.all([
         supabase.from('orders').select('id', { head:true, count:'exact' }).limit(1),
         supabase.from('email_messages').select('id', { head:true, count:'exact' }).eq('delivery_status', 'failed').gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
         supabase.from('email_messages').select('id', { head:true, count:'exact' }).eq('direction', 'inbound').gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
+        supabase.from('system_incidents').select('id,severity,source,message,request_id,created_at,resolved_at').is('resolved_at', null).order('created_at', { ascending:false }).limit(20),
       ])
       const checks = { api:{ status:'operational', label:'API' }, database:{ status:databaseError ? 'down' : 'operational', label:'Database' }, email:{ status:resendApiKey && !emailError ? 'operational' : resendApiKey ? 'degraded' : 'not_configured', label:'Email delivery' }, webhook:{ status:resendWebhookSecret && !webhookError ? 'operational' : resendWebhookSecret ? 'degraded' : 'not_configured', label:'Inbound webhook' } }
       const statuses = Object.values(checks).map((check) => check.status)
       const overall = statuses.includes('down') ? 'down' : statuses.some((status) => ['degraded','not_configured'].includes(status)) ? 'degraded' : 'operational'
-      return send(response, 200, { checkedAt, overall, checks, activity:{ failedEmails:failedEmails || 0, inboundWebhooks:recentWebhooks || 0 } })
+      return send(response, 200, { checkedAt, overall, checks, activity:{ failedEmails:failedEmails || 0, inboundWebhooks:recentWebhooks || 0 }, incidents:incidentError ? [] : (incidents || []) })
     }
     if (request.method === 'GET' && url.pathname === '/api/admin/nfc-tags') {
       const { data:tags, error } = await supabase.from('nfc_tags').select('*').order('created_at', { ascending:false }).limit(200)
