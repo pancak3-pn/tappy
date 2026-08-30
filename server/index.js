@@ -23,6 +23,7 @@ if (!adminTokenSecret) {
 }
 const resendApiKey = process.env.RESEND_API_KEY || ''
 const emailFrom = process.env.EMAIL_FROM || 'Tappy <orders@example.com>'
+const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET || ''
 const cronSecret = process.env.CRON_SECRET || ''
 const paymentReminderDelay = Math.max(Number.parseInt(process.env.PAYMENT_REMINDER_AFTER_MINUTES, 10) || 45, 15)
 const unitPrice = 199
@@ -108,6 +109,33 @@ function cleanPageLinks(value) {
     url:safeHttpsUrl(link?.url),
   })).filter((link) => link.label && link.url)
 }
+async function readRaw(request, maxBytes = 128_000) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > maxBytes) throw new Error('Payload too large')
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+function verifyResendWebhook(rawBody, headers) {
+  if (!resendWebhookSecret) return false
+  const timestamp = headers['svix-timestamp']
+  const messageId = headers['svix-id']
+  const signatures = headers['svix-signature']
+  if (!timestamp || !messageId || !signatures) return false
+  const timestampNumber = Number(timestamp)
+  if (!Number.isFinite(timestampNumber) || Math.abs(Date.now() / 1000 - timestampNumber) > 300) return false
+  const secret = resendWebhookSecret.replace(/^whsec_/, '')
+  let key
+  try { key = Buffer.from(secret, 'base64') } catch { return false }
+  const expected = createHmac('sha256', key).update(`${messageId}.${timestamp}.${rawBody}`).digest('base64')
+  return signatures.split(' ').some((signature) => {
+    const value = signature.replace(/^v\d+,/, '')
+    return safeEqual(value, expected)
+  })
+}
 function customerPageFields(body) {
   const allowed = new Set(['displayName','headline','bio','email','phone','location','accent','accentColor','backgroundTexture','template','links'])
   return pageFields(Object.fromEntries(Object.entries(body || {}).filter(([key]) => allowed.has(key))), true)
@@ -172,11 +200,11 @@ function emailTemplate({ preheader, badge, title, greeting, message, rows, notic
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>@media(max-width:600px){.email-wrap{padding:24px 12px!important}.email-card{padding:26px 20px!important}.email-title{font-size:30px!important}.email-logo{font-size:25px!important}}</style></head><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased"><div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${escapeHtml(preheader)}</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3f2ee"><tr><td class="email-wrap" align="center" style="padding:44px 20px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px"><tr><td class="email-logo" style="padding:0 4px 24px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td class="email-card" style="padding:38px 38px 34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 16px;color:#244a3a;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${escapeHtml(badge)}</p><h1 class="email-title" style="margin:0 0 18px;font-size:38px;line-height:1.04;letter-spacing:-1.8px">${escapeHtml(title)}</h1><p style="margin:0 0 12px;font-size:15px;line-height:1.65">Hi ${escapeHtml(greeting)},</p><p style="margin:0;color:#53534f;font-size:15px;line-height:1.65">${escapeHtml(message)}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:28px;border-top:1px solid #e5e3dc">${rowHtml}</table><div style="margin-top:26px;padding:16px 18px;border-left:3px solid #244a3a;background:#eef3f0;color:#34483f;font-size:13px;line-height:1.55">${escapeHtml(notice)}</div></td></tr><tr><td style="padding:22px 4px 0;color:#777770;font-size:12px;line-height:1.6">Questions? Reply to this email or contact <a href="mailto:hello@tappycard.tech" style="color:#244a3a;text-decoration:none">hello@tappycard.tech</a>.<br>Tappy · Made in the Philippines </td></tr></table></td></tr></table></body></html>`
 }
 
-async function deliverEmail({ to, subject, html, text, idempotencyKey }) {
+async function deliverEmail({ to, subject, html, text, idempotencyKey, replyTo = 'hello@tappycard.tech' }) {
   const response = await fetch('https://api.resend.com/emails', {
     method:'POST',
     headers:{ authorization:`Bearer ${resendApiKey}`, 'content-type':'application/json', 'idempotency-key':idempotencyKey },
-    body:JSON.stringify({ from:emailFrom, to:[to], subject, html, text }),
+    body:JSON.stringify({ from:emailFrom, to:[to], reply_to:replyTo, subject, html, text }),
   })
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(result.message || 'Resend rejected the email.')
@@ -412,6 +440,37 @@ async function requestHandler(request, response) {
       if (error) return send(response, 503, { error:'Analytics is not configured. Run migration 009.' })
       return send(response, 202, { accepted:true })
     } catch { return send(response, 400, { error:'Invalid analytics event.' }) }
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/webhooks/resend') {
+    let rawBody
+    try { rawBody = await readRaw(request) } catch { return send(response, 413, { error:'Webhook payload too large.' }) }
+    if (!verifyResendWebhook(rawBody, request.headers)) return send(response, resendWebhookSecret ? 401 : 503, { error: resendWebhookSecret ? 'Invalid webhook signature.' : 'Webhook signing secret is not configured.' })
+    let event
+    try { event = JSON.parse(rawBody) } catch { return send(response, 400, { error:'Invalid webhook payload.' }) }
+    if (event.type !== 'email.received' || !event.data?.email_id) return send(response, 200, { received:true })
+    try {
+      const metadata = event.data
+      const receivedResponse = await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(metadata.email_id)}`, { headers:{ authorization:`Bearer ${resendApiKey}` } })
+      if (!receivedResponse.ok) throw new Error('Received email could not be retrieved.')
+      const received = await receivedResponse.json()
+      const sender = clean(metadata.from || received.from, 160).toLowerCase()
+      const subject = clean(metadata.subject || received.subject, 180) || 'Customer reply'
+      const bodyText = clean(received.text || received.html?.replace(/<[^>]+>/g, ' '), 10000)
+      if (!sender || !bodyText) return send(response, 200, { received:true, stored:false })
+      const { data:order, error:orderError } = await supabase.from('orders').select('id,order_number,customer_name,email').ilike('email', sender).order('created_at', { ascending:false }).limit(1).maybeSingle()
+      if (orderError || !order) return send(response, 200, { received:true, stored:false })
+      const { data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString(), unread_count:1 }, { onConflict:'order_id', ignoreDuplicates:false }).select('*').single()
+      if (threadError) throw threadError
+      const { data:duplicate } = await supabase.from('email_messages').select('id').eq('thread_id', thread.id).eq('provider_message_id', metadata.message_id || metadata.email_id).maybeSingle()
+      if (duplicate) return send(response, 200, { received:true, stored:false, duplicate:true })
+      const { error:messageError } = await supabase.from('email_messages').insert({ thread_id:thread.id, direction:'inbound', sender_email:sender, recipient_email:clean((metadata.to || [emailFrom])[0], 160), subject, body_text:bodyText, provider_message_id:metadata.message_id || metadata.email_id, provider_email_id:metadata.email_id, delivery_status:'received' })
+      if (messageError) throw messageError
+      return send(response, 200, { received:true, stored:true, orderNumber:order.order_number })
+    } catch (error) {
+      Sentry.captureException(error, { tags:{ operation:'resend_inbound_webhook' } })
+      return send(response, 500, { error:'Inbound email could not be processed.' })
+    }
   }
 
   if (request.method === 'POST' && url.pathname === '/api/admin/login') {
