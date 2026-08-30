@@ -92,6 +92,12 @@ async function readJson(request, maxBytes = 32_000) {
 }
 
 function clean(value, limit) { return typeof value === 'string' ? value.trim().slice(0, limit) : '' }
+function customerReplyText(value) {
+  const text = clean(value, 10000)
+  const withoutQuotedBlock = text.split(/\n(?:On .{0,240}wrote:|Begin forwarded message:)/i)[0]
+  const withoutQuoteLines = withoutQuotedBlock.split('\n').filter((line) => !/^\s*>/.test(line)).join('\n')
+  return clean(withoutQuoteLines, 10000)
+}
 function safeHttpsUrl(value, limit = 500) {
   const candidate = clean(value, limit)
   if (!candidate) return null
@@ -456,7 +462,7 @@ async function requestHandler(request, response) {
       const received = await receivedResponse.json()
       const sender = clean(metadata.from || received.from, 160).toLowerCase()
       const subject = clean(metadata.subject || received.subject, 180) || 'Customer reply'
-      const bodyText = clean(received.text || received.html?.replace(/<[^>]+>/g, ' '), 10000)
+      const bodyText = customerReplyText(received.text || received.html?.replace(/<[^>]+>/g, ' '))
       if (!sender || !bodyText) return send(response, 200, { received:true, stored:false })
       const { data:order, error:orderError } = await supabase.from('orders').select('id,order_number,customer_name,email').ilike('email', sender).order('created_at', { ascending:false }).limit(1).maybeSingle()
       if (orderError || !order) return send(response, 200, { received:true, stored:false })
