@@ -5,6 +5,7 @@ import '@fontsource-variable/geist'
 import '@fontsource-variable/jetbrains-mono'
 import App from './App.jsx'
 import './styles.css'
+import './checkout-redesign.css'
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
