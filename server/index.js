@@ -550,6 +550,12 @@ async function requestHandler(request, response) {
         return send(response, 200, { tag:data })
       } catch { return send(response, 400, { error:'Invalid NFC link update.' }) }
     }
+    if (request.method === 'DELETE' && nfcAdminMatch) {
+      const { data, error } = await supabase.from('nfc_tags').delete().eq('id', nfcAdminMatch[1]).select('id,code').maybeSingle()
+      if (error) return send(response, 503, { error:'NFC link could not be deleted.' })
+      if (!data) return send(response, 404, { error:'NFC link not found.' })
+      return send(response, 200, { deleted:true, tag:data })
+    }
     if (request.method === 'GET' && url.pathname === '/api/admin/messages') {
       const { data:threads, error:threadError } = await supabase.from('email_threads').select('*,orders(order_number,order_status,payment_status)').order('last_message_at', { ascending:false }).limit(100)
       if (threadError) return send(response, 503, { error:'Messages are not configured. Run migration 019.' })
