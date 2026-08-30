@@ -300,6 +300,19 @@ async function sendPageAccessEmail({ email, name, editUrl, expiresAt }) {
   })
 }
 
+async function sendFeedbackLinkEmail({ email, name, feedbackUrl, expiresAt }) {
+  if (!resendApiKey) return { status:'not_configured', id:null }
+  const safeUrl = escapeHtml(feedbackUrl)
+  const expiry = new Intl.DateTimeFormat('en-PH', { dateStyle:'long' }).format(new Date(expiresAt))
+  return deliverEmail({
+    to:email,
+    subject:'Share your Tappy feedback',
+    idempotencyKey:`feedback-${hashEditToken(feedbackUrl).slice(0, 24)}`,
+    text:`Hi ${name}, thank you for your Tappy order. Share your feedback about our product and service at ${feedbackUrl}. This private link expires on ${expiry} and can only be used once. Do not share it.`,
+    html:`<!doctype html><html><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%"><tr><td align="center" style="padding:44px 20px"><table role="presentation" width="100%" style="max-width:600px"><tr><td style="padding:0 4px 24px;font-size:28px;font-weight:800">tappy.</td></tr><tr><td style="padding:38px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 14px;color:#244a3a;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Customer feedback</p><h1 style="margin:0 0 18px;font-size:36px;line-height:1.05">How did we do?</h1><p style="color:#53534f;line-height:1.65">Hi ${escapeHtml(name)}, thank you for choosing Tappy. Use the private button below to rate our product and service — it takes about a minute. Your feedback helps us improve.</p><p style="margin:28px 0"><a href="${safeUrl}" style="display:inline-block;padding:15px 22px;border-radius:10px;background:#244a3a;color:#fff;text-decoration:none;font-weight:700">Leave my feedback</a></p><p style="margin:0;color:#777770;font-size:12px;line-height:1.6">This link expires on ${escapeHtml(expiry)} and can only be used once. Contact hello@tappycard.tech if you need a new link.</p></td></tr></table></td></tr></table></body></html>`,
+  })
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(left)
   const b = Buffer.from(right)
@@ -452,6 +465,25 @@ async function requestHandler(request, response) {
         }
       } catch { return send(response, 400, { error:'Invalid message request.' }) }
     }
+    if (request.method === 'GET' && url.pathname === '/api/admin/feedback') {
+      const { data, error } = await supabase.from('feedback')
+        .select('*,orders(order_number,customer_name,email)')
+        .order('created_at', { ascending:false }).limit(200)
+      if (error) return send(response, 503, { error:'Feedback is not configured. Run migration 020.' })
+      return send(response, 200, { feedback:data })
+    }
+    const feedbackMatch = url.pathname.match(/^\/api\/admin\/feedback\/([0-9a-f-]{36})$/i)
+    if (request.method === 'PATCH' && feedbackMatch) {
+      try {
+        const body = await readJson(request, 4_000)
+        if (!['published', 'hidden', 'pending'].includes(body.status)) return send(response, 400, { error:'Invalid feedback status.' })
+        const update = { status:body.status }
+        if (body.status === 'published') update.published_at = new Date().toISOString()
+        const { data, error } = await supabase.from('feedback').update(update).eq('id', feedbackMatch[1]).select('id,status,published_at').single()
+        if (error) return send(response, 503, { error:'Feedback status could not be updated.' })
+        return send(response, 200, { feedback:data })
+      } catch { return send(response, 400, { error:'Invalid feedback update.' }) }
+    }
     if (request.method === 'GET' && url.pathname === '/api/admin/pages') {
       const { data, error } = await supabase.from('tappy_pages').select('*,orders(order_number,customer_name,email,payment_status)').order('created_at', { ascending:false }).limit(200)
       if (error) return send(response, 503, { error:'Tappy Pages could not be loaded. Run migration 007 if it is not installed.' })
@@ -536,6 +568,29 @@ async function requestHandler(request, response) {
         email = { status:'failed', id:null }
       }
       return send(response, 201, { editUrl, expiresAt, emailStatus:email.status })
+    }
+    const orderFeedbackLinkMatch = url.pathname.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/feedback-link$/i)
+    if (request.method === 'POST' && orderFeedbackLinkMatch) {
+      const { data:order, error:orderError } = await supabase.from('orders')
+        .select('id,order_number,customer_name,email,payment_status,order_status')
+        .eq('id', orderFeedbackLinkMatch[1]).single()
+      if (orderError || !order) return send(response, 404, { error:'Order not found.' })
+      if (order.payment_status !== 'paid') return send(response, 409, { error:'Feedback links can only be sent for paid orders.' })
+      if (!order.email) return send(response, 409, { error:'The order has no customer email.' })
+      const { data:existingFeedback } = await supabase.from('feedback').select('id').eq('order_id', order.id).maybeSingle()
+      if (existingFeedback) return send(response, 409, { error:'This order already has feedback.' })
+      const rawToken = randomBytes(32).toString('base64url')
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const { error:tokenError } = await supabase.from('feedback_tokens').insert({ email:order.email, order_id:order.id, token_hash:hashEditToken(rawToken), expires_at:expiresAt })
+      if (tokenError) return send(response, 503, { error:'Feedback is not configured. Run migration 020.' })
+      const origin = clean(process.env.PUBLIC_SITE_URL, 300).replace(/\/$/, '') || 'https://www.tappycard.tech'
+      let email = { status:'not_configured', id:null }
+      try { email = await sendFeedbackLinkEmail({ email:order.email, name:order.customer_name, feedbackUrl:`${origin}/feedback?t=${rawToken}`, expiresAt }) }
+      catch (emailError) {
+        Sentry.captureException(emailError, { tags:{ operation:'admin_feedback_link_email' } })
+        email = { status:'failed', id:null }
+      }
+      return send(response, 201, { emailStatus:email.status })
     }
     if (request.method === 'DELETE' && pageAccessMatch) {
       const { error } = await supabase.from('page_edit_tokens').update({ revoked_at:new Date().toISOString() }).eq('page_id', pageAccessMatch[1]).is('revoked_at', null)
@@ -829,6 +884,92 @@ async function requestHandler(request, response) {
     } catch (error) {
       return send(response, error.message === 'Payload too large' ? 413 : 400, { error:error.message === 'Payload too large' ? 'Receipt image must be smaller than 3 MB.' : 'Invalid payment proof.' })
     }
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/feedback/request') {
+    if (!rateLimit(`feedback-request:${clientIp(request)}`, 5, 60 * 60 * 1000)) return send(response, 429, { error:'Too many feedback requests. Try again later.' })
+    try {
+      const body = await readJson(request, 4_000)
+      const email = clean(body.email, 160).toLowerCase()
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(response, 400, { error:'Enter a valid email address.' })
+      const { data:order, error:orderError } = await supabase.from('orders')
+        .select('id,order_number,customer_name,email')
+        .eq('email', email).eq('payment_status', 'paid').neq('order_status', 'cancelled')
+        .order('created_at', { ascending:false }).limit(1).maybeSingle()
+      if (orderError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
+      if (!order) return send(response, 200, { ok:true })
+      if (!rateLimit(`feedback-request-email:${email}`, 3, 60 * 60 * 1000)) return send(response, 200, { ok:true })
+      const { data:existing } = await supabase.from('feedback').select('id').eq('order_id', order.id).maybeSingle()
+      if (existing) return send(response, 200, { ok:true, alreadySubmitted:true })
+      const rawToken = randomBytes(32).toString('base64url')
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      const { error:tokenError } = await supabase.from('feedback_tokens').insert({ email, order_id:order.id, token_hash:hashEditToken(rawToken), expires_at:expiresAt })
+      if (tokenError) return send(response, 503, { error:'Feedback is not configured. Run migration 020.' })
+      const origin = clean(process.env.PUBLIC_SITE_URL, 300).replace(/\/$/, '') || 'https://www.tappycard.tech'
+      let emailDelivery = { status:'not_configured', id:null }
+      try { emailDelivery = await sendFeedbackLinkEmail({ email, name:order.customer_name, feedbackUrl:`${origin}/feedback?t=${rawToken}`, expiresAt }) }
+      catch (emailError) {
+        Sentry.captureException(emailError, { tags:{ operation:'feedback_link_email' } })
+        emailDelivery = { status:'failed', id:null }
+      }
+      return send(response, 200, { ok:true, emailStatus:emailDelivery.status })
+    } catch { return send(response, 400, { error:'Invalid feedback request.' }) }
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/feedback/verify') {
+    const rawToken = url.searchParams.get('t') || ''
+    if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken)) return send(response, 401, { error:'This feedback link is invalid or expired.' })
+    const { data:access, error:accessError } = await supabase.from('feedback_tokens')
+      .select('id,email,used_at,expires_at,orders(order_number,customer_name)')
+      .eq('token_hash', hashEditToken(rawToken)).maybeSingle()
+    if (accessError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
+    if (!access || access.used_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This feedback link is invalid, used, or expired.' })
+    const order = Array.isArray(access.orders) ? access.orders[0] : access.orders
+    return send(response, 200, { email:access.email, orderNumber:order?.order_number || '', customerName:order?.customer_name || '' })
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/feedback/submit') {
+    if (!rateLimit(`feedback-submit:${clientIp(request)}`, 10, 60 * 60 * 1000)) return send(response, 429, { error:'Too many submissions. Try again later.' })
+    try {
+      const body = await readJson(request, 16_000)
+      const rawToken = clean(body.token, 64)
+      const toRating = (value) => (Number.isInteger(value) && value >= 1 && value <= 5 ? value : null)
+      const rating = toRating(body.rating)
+      const productRating = toRating(body.productRating)
+      const serviceRating = toRating(body.serviceRating)
+      const comment = clean(body.comment, 2000)
+      const displayName = clean(body.displayName, 60) || 'Tappy customer'
+      if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken)) return send(response, 401, { error:'This feedback link is invalid or expired.' })
+      if (!rating || !productRating || !serviceRating) return send(response, 400, { error:'Rate the product, the service, and your overall experience.' })
+      const { data:access, error:accessError } = await supabase.from('feedback_tokens').select('id,email,order_id,used_at,expires_at').eq('token_hash', hashEditToken(rawToken)).maybeSingle()
+      if (accessError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
+      if (!access || access.used_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This feedback link is invalid, used, or expired.' })
+      const { error:insertError } = await supabase.from('feedback').insert({
+        order_id:access.order_id, email:access.email, display_name:displayName,
+        rating, product_rating:productRating, service_rating:serviceRating, comment:comment || null,
+      })
+      if (insertError) {
+        if (insertError.code === '23505') return send(response, 409, { error:'Feedback has already been submitted for this order.' })
+        return send(response, 503, { error:'Your feedback could not be saved. Please try again.' })
+      }
+      await supabase.from('feedback_tokens').update({ used_at:new Date().toISOString() }).eq('id', access.id)
+      return send(response, 201, { ok:true })
+    } catch { return send(response, 400, { error:'Invalid feedback submission.' }) }
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/feedback/public') {
+    const { data, error } = await supabase.from('feedback')
+      .select('display_name,rating,product_rating,service_rating,comment,created_at')
+      .eq('status', 'published').order('created_at', { ascending:false }).limit(50)
+    if (error) return send(response, 503, { error:'Feedback is not available. Run migration 020.' })
+    const average = (key) => {
+      const values = data.map((entry) => entry[key]).filter((value) => Number.isInteger(value))
+      return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null
+    }
+    return send(response, 200, {
+      feedback:data,
+      averages:{ overall:average('rating'), product:average('product_rating'), service:average('service_rating'), count:data.length },
+    })
   }
 
   if (request.method !== 'POST' || url.pathname !== '/api/orders') return send(response, 404, { error:'Not found' })

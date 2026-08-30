@@ -38,6 +38,12 @@
       ]
     },
     {
+      "source": "/feedback",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
+      ]
+    },
+    {
       "source": "/api/:path*",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
@@ -53,6 +59,7 @@
     { "source": "/privacy", "destination": "/index.html" },
     { "source": "/terms", "destination": "/index.html" },
     { "source": "/order", "destination": "/index.html" },
+    { "source": "/feedback", "destination": "/index.html" },
     { "source": "/r", "destination": "/index.html" },
     { "source": "/p/:path*", "destination": "/index.html" },
     { "source": "/edit/:path*", "destination": "/index.html" }

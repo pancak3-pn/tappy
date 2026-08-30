@@ -8348,3 +8348,112 @@ body:has(.not-found) {
     font-size: 7pt;
   }
 }
+
+.home-testimonials {
+  padding-top: 20px;
+}
+
+.home-testimonials-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 22px;
+  color: #53534f;
+  font-size: 15px;
+}
+
+.home-testimonials-summary svg {
+  color: #e3a008;
+}
+
+.home-testimonials-summary b {
+  color: #151515;
+}
+
+.home-testimonials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 0 0 24px;
+}
+
+.home-testimonial {
+  margin: 0;
+  background: #fff;
+  border: 1px solid #e2e0d8;
+  border-radius: 18px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-testimonial-stars {
+  display: flex;
+  gap: 2px;
+  color: #e3a008;
+}
+
+.home-testimonial blockquote {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #34372f;
+}
+
+.home-testimonial figcaption {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.home-testimonial figcaption b {
+  color: #151515;
+}
+
+.home-testimonial figcaption span {
+  color: #77776f;
+  font-size: 12px;
+}
+
+.home-testimonial figcaption b,
+.feedback-card footer b {
+  color: #244a3a;
+}
+
+.home-testimonials .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border: 1px solid #244a3a;
+  border-radius: 999px;
+  background: #244a3a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.home-testimonials .text-link:hover {
+  background: #1c3a2d;
+  box-shadow: 0 8px 20px rgba(36, 74, 58, .22);
+  transform: translateY(-2px);
+}
+
+.home-testimonials .text-link:focus-visible {
+  outline: 2px solid #244a3a;
+  outline-offset: 3px;
+}
+
+.home-testimonials-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.home-testimonials .text-link {
+  width: fit-content;
+  align-self: flex-start;
+}
