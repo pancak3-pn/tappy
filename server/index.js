@@ -1095,6 +1095,9 @@ async function requestHandler(request, response) {
       const { data:access, error:accessError } = await supabase.from('feedback_tokens').select('id,email,order_id,used_at,expires_at').eq('token_hash', hashEditToken(rawToken)).maybeSingle()
       if (accessError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
       if (!access || access.used_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This feedback link is invalid, used, or expired.' })
+      const { data:existingFeedback, error:existingFeedbackError } = await supabase.from('feedback').select('id').eq('order_id', access.order_id).limit(1).maybeSingle()
+      if (existingFeedbackError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
+      if (existingFeedback) return send(response, 409, { error:'Feedback has already been submitted for this order.' })
       const { error:insertError } = await supabase.from('feedback').insert({
         order_id:access.order_id, email:access.email, display_name:displayName,
         rating, product_rating:productRating, service_rating:serviceRating, comment:comment || null,
