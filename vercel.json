@@ -55,6 +55,7 @@
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api" },
+    { "source": "/t/:code", "destination": "/api/t/:code" },
     { "source": "/faqs", "destination": "/index.html" },
     { "source": "/privacy", "destination": "/index.html" },
     { "source": "/terms", "destination": "/index.html" },

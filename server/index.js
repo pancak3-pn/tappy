@@ -830,6 +830,23 @@ async function requestHandler(request, response) {
     return send(response, 200, { page:managedProfilePayload(data) })
   }
 
+  const nfcTagMatch = url.pathname.match(/^\/api\/t\/([A-Za-z0-9]{6,16})$/i)
+  if (request.method === 'GET' && nfcTagMatch) {
+    const { data:tag, error } = await supabase.from('nfc_tags').select('id,destination_type,destination_url,active').eq('code', nfcTagMatch[1].toUpperCase()).maybeSingle()
+    if (error || !tag?.active) return send(response, 404, { error:'This Tappy card is inactive or not registered.' })
+    await supabase.from('nfc_tap_events').insert({ tag_id:tag.id, destination_type:tag.destination_type, user_agent:clean(request.headers['user-agent'], 500) || null, referrer:clean(request.headers.referer, 500) || null })
+    if (tag.destination_type === 'instagram') {
+      const match = tag.destination_url.match(/^https:\/\/(?:www\.)?instagram\.com\/([^/?#]+)/i)
+      const username = match?.[1]
+      if (username) {
+        const fallback = tag.destination_url
+        const html = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="2;url=${escapeHtml(fallback)}"><script>location.href=${JSON.stringify(`instagram://user?username=${username}`)};setTimeout(()=>location.href=${JSON.stringify(fallback)},1200)</script><p>Opening Instagram… <a href="${escapeHtml(fallback)}">Continue in browser</a></p>`
+        response.writeHead(200, { 'content-type':'text/html; charset=utf-8', 'cache-control':'no-store' }); return response.end(html)
+      }
+    }
+    response.writeHead(302, { location:tag.destination_url, 'cache-control':'no-store' }); return response.end()
+  }
+
   const customerPhotoMatch = url.pathname.match(/^\/api\/pages\/edit\/([A-Za-z0-9_-]{43})\/photo$/)
   if (customerPhotoMatch && ['POST','DELETE'].includes(request.method)) {
     if (!rateLimit(`page-photo:${clientIp(request)}`, 30, 60 * 60 * 1000)) return send(response, 429, { error:'Too many photo requests. Try again later.' })
