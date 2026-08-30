@@ -388,6 +388,22 @@ function createOrderNumber() {
   const day = new Date().toISOString().slice(0, 10).replaceAll('-', '')
   return `TAP-${day}-${randomUUID().slice(0, 6).toUpperCase()}`
 }
+function createNfcCode() {
+  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+  return Array.from(randomBytes(8), (byte) => alphabet[byte % alphabet.length]).join('')
+}
+function validNfcDestination(type, value) {
+  const allowed = new Set(['website','instagram','facebook','tiktok','youtube','maps','whatsapp'])
+  if (!allowed.has(type)) return null
+  try {
+    const url = new URL(clean(value, 500))
+    if (url.protocol !== 'https:') return null
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
+    const hosts = { instagram:['instagram.com'], facebook:['facebook.com','fb.com'], tiktok:['tiktok.com'], youtube:['youtube.com','youtu.be'], maps:['google.com','maps.google.com','goo.gl'], whatsapp:['wa.me','whatsapp.com'] }
+    if (type !== 'website' && !hosts[type]?.some((host) => hostname === host || hostname.endsWith(`.${host}`))) return null
+    return url.toString()
+  } catch { return null }
+}
 
 async function requestHandler(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1')
@@ -491,6 +507,49 @@ async function requestHandler(request, response) {
 
   if (url.pathname.startsWith('/api/admin/')) {
     if (!isAdmin(request)) return send(response, 401, { error:'Admin session required.' })
+    if (request.method === 'GET' && url.pathname === '/api/admin/nfc-tags') {
+      const { data:tags, error } = await supabase.from('nfc_tags').select('*').order('created_at', { ascending:false }).limit(200)
+      if (error) return send(response, 503, { error:'NFC links are not configured. Run migration 021.' })
+      const tagIds = tags.map((tag) => tag.id)
+      const counts = new Map()
+      if (tagIds.length) {
+        const { data:events } = await supabase.from('nfc_tap_events').select('tag_id').in('tag_id', tagIds)
+        events?.forEach((event) => counts.set(event.tag_id, (counts.get(event.tag_id) || 0) + 1))
+      }
+      return send(response, 200, { tags:tags.map((tag) => ({ ...tag, tap_count:counts.get(tag.id) || 0 })) })
+    }
+    if (request.method === 'POST' && url.pathname === '/api/admin/nfc-tags') {
+      try {
+        const body = await readJson(request, 4_000)
+        const destinationType = clean(body.destinationType, 24)
+        const destinationUrl = validNfcDestination(destinationType, body.destinationUrl)
+        if (!destinationUrl) return send(response, 400, { error:'Enter a valid HTTPS URL for the selected destination.' })
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const code = createNfcCode()
+          const { data, error } = await supabase.from('nfc_tags').insert({ code, destination_type:destinationType, destination_url:destinationUrl }).select('*').single()
+          if (!error) return send(response, 201, { tag:{ ...data, tap_count:0 } })
+          if (error.code !== '23505') return send(response, 503, { error:'NFC link could not be created.' })
+        }
+        return send(response, 503, { error:'A unique NFC code could not be generated.' })
+      } catch { return send(response, 400, { error:'Invalid NFC link request.' }) }
+    }
+    const nfcAdminMatch = url.pathname.match(/^\/api\/admin\/nfc-tags\/([0-9a-f-]{36})$/i)
+    if (request.method === 'PATCH' && nfcAdminMatch) {
+      try {
+        const body = await readJson(request, 4_000)
+        const update = {}
+        if (typeof body.active === 'boolean') update.active = body.active
+        if (body.destinationType || body.destinationUrl) {
+          const destinationType = clean(body.destinationType, 24)
+          const destinationUrl = validNfcDestination(destinationType, body.destinationUrl)
+          if (!destinationUrl) return send(response, 400, { error:'Enter a valid HTTPS URL for the selected destination.' })
+          update.destination_type = destinationType; update.destination_url = destinationUrl
+        }
+        const { data, error } = await supabase.from('nfc_tags').update(update).eq('id', nfcAdminMatch[1]).select('*').single()
+        if (error) return send(response, 503, { error:'NFC link could not be updated.' })
+        return send(response, 200, { tag:data })
+      } catch { return send(response, 400, { error:'Invalid NFC link update.' }) }
+    }
     if (request.method === 'GET' && url.pathname === '/api/admin/messages') {
       const { data:threads, error:threadError } = await supabase.from('email_threads').select('*,orders(order_number,order_status,payment_status)').order('last_message_at', { ascending:false }).limit(100)
       if (threadError) return send(response, 503, { error:'Messages are not configured. Run migration 019.' })
