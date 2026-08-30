@@ -58,6 +58,6 @@ export default function ManagedProfileCard({ page, preview = false, footer = tru
         {links.map((link, index) => { const Icon = linkIcons[link.type] || Globe; return action(link.url, link.label, <Icon size={20}/>, '', { key:`${link.url}-${index}`, title:link.label, 'data-link-type':link.type, target:'_blank', rel:'noreferrer' }) })}
       </div>}
     </div>}
-    {footer && <footer><span>Powered by Tappy</span></footer>}
+    {footer && <footer><span>Powered by Tappy</span>{!preview && <a className="managed-page-order-cta" href="/order">Order Here</a>}</footer>}
   </div>
 }

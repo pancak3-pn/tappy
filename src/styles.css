@@ -1984,6 +1984,13 @@ body:has(.not-found) {
   background-color: #fff;
   background-image: radial-gradient(circle at 50% 112%, rgb(36 74 58 / .055), transparent 38%);
 }
+.managed-page-order-cta {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
+.managed-page-order-cta:hover { text-decoration: underline; }
 
 .managed-page[data-background="linen"] .managed-page-shell,
 .managed-page-shell[data-background="linen"] {
