@@ -302,7 +302,8 @@ async function sendDeliveryEmail(order) {
 
 function customerMessageHtml({ name, subject, body, orderNumber }) {
   const paragraphs = escapeHtml(body).split(/\n{2,}/).map((paragraph) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:#474b47">${paragraph.replaceAll('\n', '<br>')}</p>`).join('')
-  return `<!doctype html><html><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f2ee"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px"><tr><td style="padding:0 4px 22px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td style="padding:34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff"><p style="margin:0 0 12px;color:#244a3a;font-size:13px;font-weight:700">Order ${escapeHtml(orderNumber)}</p><h1 style="margin:0 0 22px;font-size:30px;line-height:1.1;letter-spacing:-1px">${escapeHtml(subject)}</h1><p style="margin:0 0 16px;font-size:15px;line-height:1.65">Hi ${escapeHtml(name)},</p>${paragraphs}<p style="margin:26px 0 0;font-size:14px;line-height:1.6;color:#626660">Tappy customer support<br><a href="mailto:hello@tappycard.tech" style="color:#244a3a;text-decoration:none">hello@tappycard.tech</a></p></td></tr></table></td></tr></table></body></html>`
+  const context = orderNumber ? `<p style="margin:0 0 12px;color:#244a3a;font-size:13px;font-weight:700">Order ${escapeHtml(orderNumber)}</p>` : '<p style="margin:0 0 12px;color:#244a3a;font-size:13px;font-weight:700">Tappy Support</p>'
+  return `<!doctype html><html><body style="margin:0;background:#f3f2ee;color:#151515;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f2ee"><tr><td align="center" style="padding:40px 16px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px"><tr><td style="padding:0 4px 22px;font-size:28px;font-weight:800;letter-spacing:-1.8px">tappy.</td></tr><tr><td style="padding:34px;border:1px solid #d8d6cf;border-radius:18px;background:#fff">${context}<h1 style="margin:0 0 22px;font-size:30px;line-height:1.1;letter-spacing:-1px">${escapeHtml(subject)}</h1><p style="margin:0 0 16px;font-size:15px;line-height:1.65">Hi ${escapeHtml(name)},</p>${paragraphs}<p style="margin:26px 0 0;font-size:14px;line-height:1.6;color:#626660">Tappy customer support<br><a href="mailto:hello@tappycard.tech" style="color:#244a3a;text-decoration:none">hello@tappycard.tech</a></p></td></tr></table></td></tr></table></body></html>`
 }
 
 async function sendPaymentReminderEmail(order) {
@@ -611,20 +612,39 @@ async function requestHandler(request, response) {
       try {
         const body = await readJson(request, 24_000)
         const orderId = clean(body.orderId, 36)
+        const recipientEmail = clean(body.recipientEmail, 160).toLowerCase()
         const subject = clean(body.subject, 180)
         const bodyText = clean(body.body, 10_000)
-        if (!/^[0-9a-f-]{36}$/i.test(orderId) || !subject || !bodyText) return send(response, 400, { error:'Choose an order and add a subject and message.' })
-        const { data:order, error:orderError } = await supabase.from('orders').select('id,order_number,customer_name,email').eq('id', orderId).single()
-        if (orderError || !order?.email) return send(response, 404, { error:'The customer order could not be found.' })
-        const { data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString() }, { onConflict:'order_id' }).select('*').single()
+        if ((!/^[0-9a-f-]{36}$/i.test(orderId) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) || !subject || !bodyText) return send(response, 400, { error:'Choose a customer and add a subject and message.' })
+        let order = null
+        let thread
+        let threadError
+        if (/^[0-9a-f-]{36}$/i.test(orderId)) {
+          const result = await supabase.from('orders').select('id,order_number,customer_name,email').eq('id', orderId).single()
+          order = result.data
+          if (result.error || !order?.email) return send(response, 404, { error:'The customer order could not be found.' })
+          ({ data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString() }, { onConflict:'order_id' }).select('*').single())
+        } else {
+          const existing = await supabase.from('email_threads').select('*').is('order_id', null).eq('customer_email', recipientEmail).maybeSingle()
+          if (existing.error) return send(response, 503, { error:'Support messages are not configured.' })
+          if (existing.data) {
+            thread = existing.data
+            const updated = await supabase.from('email_threads').update({ subject, last_message_at:new Date().toISOString() }).eq('id', thread.id).select('*').single()
+            thread = updated.data
+            threadError = updated.error
+          } else {
+            ({ data:thread, error:threadError } = await supabase.from('email_threads').insert({ order_id:null, customer_name:recipientEmail.split('@')[0], customer_email:recipientEmail, subject, last_message_at:new Date().toISOString() }).select('*').single())
+          }
+        }
         if (threadError) return send(response, 503, { error:'Messages are not configured. Run migration 019.' })
         const messageId = randomUUID()
-        const { data:message, error:messageError } = await supabase.from('email_messages').insert({ id:messageId, thread_id:thread.id, direction:'outbound', sender_email:emailFrom, recipient_email:order.email, subject, body_text:bodyText, delivery_status:'queued' }).select('*').single()
+        const recipient = order?.email || thread.customer_email
+        const { data:message, error:messageError } = await supabase.from('email_messages').insert({ id:messageId, thread_id:thread.id, direction:'outbound', sender_email:emailFrom, recipient_email:recipient, subject, body_text:bodyText, delivery_status:'queued' }).select('*').single()
         if (messageError) return send(response, 503, { error:'The message could not be saved.' })
         try {
-          const delivery = await deliverEmail({ to:order.email, subject, text:`Hi ${order.customer_name},\n\n${bodyText}\n\nTappy customer support`, html:customerMessageHtml({ name:order.customer_name, subject, body:bodyText, orderNumber:order.order_number }), idempotencyKey:`admin-message-${messageId}` })
+          const delivery = await deliverEmail({ to:recipient, subject, text:`Hi ${order?.customer_name || thread.customer_name},\n\n${bodyText}\n\nTappy customer support`, html:customerMessageHtml({ name:order?.customer_name || thread.customer_name, subject, body:bodyText, orderNumber:order?.order_number }), idempotencyKey:`admin-message-${messageId}` })
           const { data:sentMessage } = await supabase.from('email_messages').update({ delivery_status:'sent', provider_email_id:delivery.id }).eq('id', messageId).select('*').single()
-          return send(response, 201, { thread:{ ...thread, orders:{ order_number:order.order_number }, messages:[sentMessage || { ...message, delivery_status:'sent', provider_email_id:delivery.id }] } })
+          return send(response, 201, { thread:{ ...thread, orders:order ? { order_number:order.order_number } : null, messages:[sentMessage || { ...message, delivery_status:'sent', provider_email_id:delivery.id }] } })
         } catch (emailError) {
           await supabase.from('email_messages').update({ delivery_status:'failed' }).eq('id', messageId)
           return send(response, 502, { error:`Email could not be sent: ${emailError.message}` })
