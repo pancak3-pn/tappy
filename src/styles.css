@@ -8408,6 +8408,25 @@ body:has(.not-found) {
   margin: 0 0 24px;
 }
 
+.home-testimonial-loading {
+  min-height: 150px;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+.home-testimonial-loading span,
+.feedback-loading-line {
+  display: block;
+  height: 12px;
+  width: 72%;
+  border-radius: 999px;
+  background: #e8e6df;
+  animation: pulse-placeholder 1.2s ease-in-out infinite alternate;
+}
+.home-testimonial-loading span:nth-child(2) { width: 92%; }
+.home-testimonial-loading span:nth-child(3), .feedback-loading-line.short { width: 48%; }
+@keyframes pulse-placeholder { from { opacity: .55; } to { opacity: 1; } }
+
 .home-testimonial {
   margin: 0;
   background: #fff;

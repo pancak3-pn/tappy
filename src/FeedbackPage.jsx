@@ -32,7 +32,12 @@ function PublicWall() {
     }).catch(() => {})
     return () => { active = false }
   }, [])
-  if (!publicFeedback) return null
+  if (!publicFeedback) return (
+    <section className="feedback-wall feedback-wall-loading" aria-label="Customer feedback" aria-busy="true">
+      <h2>What Tappy customers say</h2>
+      <div className="feedback-empty-card"><span className="feedback-loading-line" /><span className="feedback-loading-line short" /></div>
+    </section>
+  )
   if (!publicFeedback.feedback?.length) {
     return (
       <section className="feedback-wall feedback-wall-empty" aria-label="Customer feedback">

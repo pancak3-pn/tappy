@@ -224,6 +224,8 @@
   margin-top: -8px;
 }
 
+.feedback-wall-loading .feedback-empty-card { min-height: 120px; justify-content: center; }
+
 .feedback-empty-card {
   display: flex;
   align-items: center;

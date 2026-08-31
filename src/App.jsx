@@ -374,12 +374,12 @@ function Testimonials() {
     }).catch(() => {})
     return () => { active = false }
   }, [])
-  if (!publicFeedback?.feedback?.length) return null
-  const showcase = publicFeedback.feedback.slice(0, 6)
+  const showcase = publicFeedback?.feedback?.slice(0, 6) || []
   return <section className="section shell home-testimonials" id="testimonials">
     <div className="section-heading"><h2>Customers are talking.</h2><p>Verified ratings from people who ordered and received a Tappy card.</p></div>
-    {publicFeedback.averages?.overall != null && <p className="home-testimonials-summary"><Star size={18} weight="fill" aria-hidden="true" /> <b>{publicFeedback.averages.overall}</b> average from {publicFeedback.averages.count} published review{publicFeedback.averages.count === 1 ? '' : 's'}</p>}
-    <div className="home-testimonials-grid">
+    {publicFeedback?.averages?.overall != null && <p className="home-testimonials-summary"><Star size={18} weight="fill" aria-hidden="true" /> <b>{publicFeedback.averages.overall}</b> average from {publicFeedback.averages.count} published review{publicFeedback.averages.count === 1 ? '' : 's'}</p>}
+    <div className={`home-testimonials-grid${publicFeedback ? '' : ' is-loading'}`} aria-busy={!publicFeedback}>
+      {!publicFeedback && <div className="home-testimonial home-testimonial-loading" aria-hidden="true"><span /><span /><span /></div>}
       {showcase.map((entry, index) => (
         <figure className="home-testimonial" key={index}>
           <div className="home-testimonial-stars" aria-label={`${entry.rating} out of 5 stars`}>
@@ -390,7 +390,7 @@ function Testimonials() {
         </figure>
       ))}
     </div>
-    <a className="text-link" href="/feedback">See all feedback<ArrowUpRight size={16} weight="bold" aria-hidden="true" /></a>
+    {publicFeedback && <a className="text-link" href="/feedback">See all feedback<ArrowUpRight size={16} weight="bold" aria-hidden="true" /></a>}
   </section>
 }
 
@@ -466,8 +466,13 @@ export default function App() {
     })
     const elements = document.querySelectorAll('[data-fade]')
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => entry.target.classList.toggle('is-visible', entry.isIntersecting))
-    }, { threshold: 0.14, rootMargin: '0px 0px -5% 0px' })
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible')
+          observer.unobserve(entry.target)
+        }
+      })
+    }, { threshold: 0.08, rootMargin: '0px 0px 12% 0px' })
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
   }, [adminPage, customerEditor, howItWorksPage, feedbackPage, managedPage, orderPage, privacyPage, termsPage, unknownPage])
