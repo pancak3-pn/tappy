@@ -488,14 +488,29 @@ async function requestHandler(request, response) {
       const bodyText = customerReplyText(received.text || received.html?.replace(/<[^>]+>/g, ' '))
       if (!sender || !bodyText) return send(response, 200, { received:true, stored:false })
       const { data:order, error:orderError } = await supabase.from('orders').select('id,order_number,customer_name,email').ilike('email', sender).order('created_at', { ascending:false }).limit(1).maybeSingle()
-      if (orderError || !order) return send(response, 200, { received:true, stored:false })
-      const { data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString(), unread_count:1 }, { onConflict:'order_id', ignoreDuplicates:false }).select('*').single()
+      if (orderError) throw orderError
+      let thread
+      let threadError
+      if (order) {
+        ({ data:thread, error:threadError } = await supabase.from('email_threads').upsert({ order_id:order.id, customer_name:order.customer_name, customer_email:order.email, subject, last_message_at:new Date().toISOString(), unread_count:1 }, { onConflict:'order_id', ignoreDuplicates:false }).select('*').single())
+      } else {
+        const existing = await supabase.from('email_threads').select('*').is('order_id', null).eq('customer_email', sender).maybeSingle()
+        if (existing.error) throw existing.error
+        if (existing.data) {
+          thread = existing.data
+          const updated = await supabase.from('email_threads').update({ subject, last_message_at:new Date().toISOString(), unread_count:(thread.unread_count || 0) + 1 }).eq('id', thread.id).select('*').single()
+          thread = updated.data
+          threadError = updated.error
+        } else {
+          ({ data:thread, error:threadError } = await supabase.from('email_threads').insert({ order_id:null, customer_name:sender.split('@')[0], customer_email:sender, subject, last_message_at:new Date().toISOString(), unread_count:1 }).select('*').single())
+        }
+      }
       if (threadError) throw threadError
       const { data:duplicate } = await supabase.from('email_messages').select('id').eq('thread_id', thread.id).eq('provider_message_id', metadata.message_id || metadata.email_id).maybeSingle()
       if (duplicate) return send(response, 200, { received:true, stored:false, duplicate:true })
       const { error:messageError } = await supabase.from('email_messages').insert({ thread_id:thread.id, direction:'inbound', sender_email:sender, recipient_email:clean((metadata.to || [emailFrom])[0], 160), subject, body_text:bodyText, provider_message_id:metadata.message_id || metadata.email_id, provider_email_id:metadata.email_id, delivery_status:'received' })
       if (messageError) throw messageError
-      return send(response, 200, { received:true, stored:true, orderNumber:order.order_number })
+      return send(response, 200, { received:true, stored:true, orderNumber:order?.order_number || null, support:!order })
     } catch (error) {
       await recordIncident({ severity:'error', source:'resend_inbound_webhook', message:error.message, requestId:request.headers['x-request-id'] })
       Sentry.captureException(error, { tags:{ operation:'resend_inbound_webhook' } })

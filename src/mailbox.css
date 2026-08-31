@@ -12,4 +12,11 @@
 @media(max-width:1200px){.admin-mailbox{grid-template-columns:150px minmax(280px,.8fr) minmax(340px,1.2fr)}}
 @media(max-width:900px){.admin-mailbox{grid-template-columns:160px minmax(0,1fr)}.mailbox-reader{grid-column:1/-1;min-height:600px;border-top:1px solid #dfe2dc}}
 @media(max-width:640px){.admin-mailbox{display:block}.mailbox-folders{padding:10px;display:flex;gap:6px;overflow-x:auto;border-right:0;border-bottom:1px solid #dfe2dc}.mailbox-folders h2,.mailbox-folders>div{display:none}.mailbox-folders>button{width:auto;min-width:140px;margin:0}.mailbox-list{max-height:430px;border-right:0}.mailbox-reader{min-height:620px}.mailbox-compose{right:10px;bottom:10px;left:10px}.mailbox-compose>label{grid-template-columns:1fr;gap:5px}}
+
+/* Keep the mail workspace inside the visible dashboard area. */
+.admin-mailbox { height: clamp(560px, calc(100vh - 245px), 820px); min-height: 560px; }
+.mailbox-reader { min-height: 0; }
+.mailbox-messages { flex: 1 1 auto; }
+.mailbox-reader-status { display: inline-flex; align-items: center; gap: 7px; color: #637069; font-size: .65rem; font-weight: 700; }
+@media (max-width: 900px) { .admin-mailbox { height: auto; min-height: 0; } }
 .admin-email-customer{min-height:34px;margin-top:10px;padding:0 11px;display:inline-flex;align-items:center;gap:7px;border:1px solid #cdd9d0;border-radius:8px;background:#edf4ef;color:var(--forest);font:inherit;font-size:.64rem;font-weight:700;cursor:pointer}
