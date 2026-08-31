@@ -400,7 +400,8 @@ export default function App() {
   const appRef = useRef(null)
   const currentPath = window.location.pathname.replace(/\/+$/, '')
   const orderPage = currentPath === '/order'
-  const adminPage = currentPath === '/r'
+  const isAdminHost = window.location.hostname.toLowerCase() === 'admin.tappycard.tech'
+  const adminPage = currentPath === '/r' || (isAdminHost && (currentPath === '' || currentPath === '/'))
   const howItWorksPage = currentPath === '/faqs'
   const privacyPage = currentPath === '/privacy'
   const termsPage = currentPath === '/terms'
@@ -487,4 +488,3 @@ export default function App() {
   if (orderPage) return <main className="page order-page" ref={appRef}><a href="#order" className="skip-link">Skip to order form</a><Header staticNav checkout /><OrderFlow /><div className="order-page-footer shell"><Logo /><a href="https://mail.google.com/mail/?view=cm&fs=1&to=hello%40tappycard.tech" target="_blank" rel="noreferrer">Need help? hello@tappycard.tech</a></div></main>
   return <main className="page" ref={appRef}><a href="#top" className="skip-link">Skip to main content</a><Header /><BackToTop /><div className="site-curtain"><Hero /><HowItWorks /><DestinationSwitcher /><Products /><UseCaseTicker /><Pricing /><Testimonials /></div><div className="footer-reveal"><div className="footer-stack"><Footer /></div></div></main>
 }
-
