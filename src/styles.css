@@ -5697,6 +5697,39 @@ body:has(.not-found) {
   text-decoration: underline;
 }
 
+.admin-contact-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.admin-email-customer {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid #cbdad2;
+  border-radius: 9px;
+  background: #eef5f0;
+  color: var(--forest);
+  font: inherit;
+  font-size: .74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-email-customer:hover {
+  background: #e2eee7;
+  border-color: #9dbdad;
+}
+
+.admin-email-customer:focus-visible {
+  outline: 3px solid rgba(36, 80, 62, .25);
+  outline-offset: 2px;
+}
+
 .admin-proof {
   margin: 0 0 32px;
   padding: 20px;
