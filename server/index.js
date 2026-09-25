@@ -9,6 +9,7 @@ import { paidSalesByRegion } from '../shared/sales-metrics.js'
 import { createAuth } from './auth.js'
 import { createRateLimiter, safeEqual } from './security.js'
 import { normalizeOrder, parseReceiptData } from './validation.js'
+import { normalizeFeedback } from './feedback.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -1103,14 +1104,8 @@ async function requestHandler(request, response) {
     try {
       const body = await readJson(request, 16_000)
       const rawToken = clean(body.token, 64)
-      const toRating = (value) => (Number.isInteger(value) && value >= 1 && value <= 5 ? value : null)
-      const rating = toRating(body.rating)
-      const productRating = toRating(body.productRating)
-      const serviceRating = toRating(body.serviceRating)
-      const comment = clean(body.comment, 2000)
-      const displayName = clean(body.displayName, 60) || 'Tappy customer'
+      const { rating, productRating, serviceRating, comment, displayName } = normalizeFeedback(body)
       if (!/^[A-Za-z0-9_-]{43}$/.test(rawToken)) return send(response, 401, { error:'This feedback link is invalid or expired.' })
-      if (!rating || !productRating || !serviceRating) return send(response, 400, { error:'Rate the product, the service, and your overall experience.' })
       const { data:access, error:accessError } = await supabase.from('feedback_tokens').select('id,email,order_id,used_at,expires_at').eq('token_hash', hashEditToken(rawToken)).maybeSingle()
       if (accessError) return send(response, 503, { error:'Feedback is temporarily unavailable. Please try again.' })
       if (!access || access.used_at || new Date(access.expires_at).getTime() <= Date.now()) return send(response, 401, { error:'This feedback link is invalid, used, or expired.' })
