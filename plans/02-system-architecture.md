@@ -36,6 +36,13 @@ The frontend is a client-rendered React application. Vercel rewrites public appl
 
 The server owns all privileged Supabase access. `SUPABASE_SECRET_KEY` must never be exposed to browser code or prefixed with `VITE_`.
 
+### Server module boundaries
+
+- `server/auth.js` owns signed admin sessions, order proof tokens, cookie parsing, and token verification.
+- `server/security.js` owns constant-time comparisons, client-IP extraction, and rate limiting.
+- `server/validation.js` owns order normalization, delivery/total calculation, and payment-receipt validation.
+- `server/index.js` remains the HTTP boundary and coordinates Supabase, email, incidents, and route behavior.
+
 ## Data ownership
 
 Supabase stores orders, profiles, analytics, edit tokens, profile revisions, messages, feedback, NFC destinations, tap events, rate-limit counters, and system incidents. Supabase Storage holds payment proofs and profile images.

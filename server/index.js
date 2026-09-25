@@ -8,6 +8,7 @@ import { canTransitionOrder, canTransitionPayment, lifecycleTimestamps, ORDER_ST
 import { paidSalesByRegion } from '../shared/sales-metrics.js'
 import { createAuth } from './auth.js'
 import { createRateLimiter, safeEqual } from './security.js'
+import { normalizeOrder, parseReceiptData } from './validation.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -29,7 +30,6 @@ const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET || ''
 const cronSecret = process.env.CRON_SECRET || ''
 const paymentReminderDelay = Math.max(Number.parseInt(process.env.PAYMENT_REMINDER_AFTER_MINUTES, 10) || 45, 15)
 const unitPrice = 199
-const allowedPayments = new Set(['gcash'])
 
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -1016,16 +1016,16 @@ async function requestHandler(request, response) {
       const reference = clean(body.reference, 100).replace(/\s+/g, '')
       const senderName = clean(body.senderName, 100)
       const senderPhone = clean(body.senderPhone, 32)
-      const receiptMatch = typeof body.receiptData === 'string' && body.receiptData.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/)
-      if (reference.length < 6 || !senderName || !senderPhone || !receiptMatch) return send(response, 400, { error:'Add the GCash reference, sender details, and a valid receipt image.' })
-      const receipt = Buffer.from(receiptMatch[2], 'base64')
-      if (!receipt.length || receipt.length > 3_145_728) return send(response, 413, { error:'Receipt image must be smaller than 3 MB.' })
+      if (reference.length < 6 || !senderName || !senderPhone) return send(response, 400, { error:'Add the GCash reference, sender details, and a valid receipt image.' })
+      let receiptData
+      try { receiptData = parseReceiptData(body.receiptData) }
+      catch (error) { return send(response, error.message.includes('smaller') ? 413 : 400, { error:error.message }) }
+      const { receipt, contentType, extension } = receiptData
       const { data:order, error:orderError } = await supabase.from('orders').select('id,payment_status,payment_proof_path').eq('order_number', orderNumber).single()
       if (orderError || !order) return send(response, 404, { error:'Order not found.' })
       if (order.payment_status === 'paid') return send(response, 409, { error:'This order is already marked as paid.' })
-      const extension = receiptMatch[1] === 'image/jpeg' ? 'jpg' : receiptMatch[1].split('/')[1]
       const proofPath = `${order.id}/${randomUUID()}.${extension}`
-      const { error:uploadError } = await supabase.storage.from('payment-proofs').upload(proofPath, receipt, { contentType:receiptMatch[1], upsert:false })
+      const { error:uploadError } = await supabase.storage.from('payment-proofs').upload(proofPath, receipt, { contentType, upsert:false })
       if (uploadError) return send(response, 503, { error:'Receipt upload failed. Please try again.' })
       const { data, error } = await supabase.from('orders').update({
         payment_reference:reference,
@@ -1150,28 +1150,17 @@ async function requestHandler(request, response) {
 
   try {
     const body = await readJson(request)
-    const order = {
-      name:clean(body.name, 100), email:clean(body.email, 160).toLowerCase(), phone:clean(body.phone, 32),
-      address:clean(body.address, 220), city:clean(body.city, 100), province:clean(body.province, 100), postal:clean(body.postal, 16),
-      payment:clean(body.payment, 16), quantity:Number(body.quantity),
-    }
-    if (!order.name || !order.email.includes('@') || !order.phone || !order.address || !order.city || !order.province || !order.postal) return send(response, 400, { error:'Complete all customer and delivery fields.' })
-    if (!Number.isInteger(order.quantity) || order.quantity < 1 || order.quantity > 10) return send(response, 400, { error:'Quantity must be between 1 and 10.' })
-    if (!allowedPayments.has(order.payment)) return send(response, 400, { error:'Choose a valid payment method.' })
-
-    const deliveryRegion = getDeliveryRegion(order.province)
-    const shippingFee = getDeliveryFee(order.province)
-    if (!deliveryRegion || shippingFee == null) return send(response, 400, { error:'Choose a supported Philippine province.' })
-    order.deliveryRegion = deliveryRegion
-    order.shippingFee = shippingFee
+    let order
+    try { order = normalizeOrder(body, { getDeliveryRegion, getDeliveryFee, unitPrice }) }
+    catch (error) { return send(response, error.message.includes('Quantity') || error.message.includes('valid payment') || error.message.includes('supported') ? 400 : 400, { error:error.message }) }
     const orderNumber = createOrderNumber()
-    const total = order.quantity * unitPrice + shippingFee
+    const total = order.total
     const paymentStatus = 'awaiting_payment'
     const orderStatus = 'pending_payment_verification'
     const { data, error } = await supabase.from('orders').insert({
       order_number:orderNumber, customer_name:order.name, email:order.email, phone:order.phone,
-      address:order.address, city:order.city, province:order.province, delivery_region:deliveryRegion, postal_code:order.postal, quantity:order.quantity,
-      unit_price:unitPrice, shipping_fee:shippingFee, total, payment_method:order.payment,
+      address:order.address, city:order.city, province:order.province, delivery_region:order.deliveryRegion, postal_code:order.postal, quantity:order.quantity,
+      unit_price:unitPrice, shipping_fee:order.shippingFee, total, payment_method:order.payment,
       payment_status:paymentStatus, order_status:orderStatus,
     }).select('id,order_number,total,payment_method,payment_status,order_status,created_at').single()
     if (error) {
