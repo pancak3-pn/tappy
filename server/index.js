@@ -1,11 +1,13 @@
 import { createServer } from 'node:http'
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/node'
 import { getDeliveryFee, getDeliveryRegion } from '../shared/delivery.js'
 import { managedProfilePayload, normalizeAccentColor, PROFILE_ACCENTS, PROFILE_BACKGROUNDS, PROFILE_TEMPLATES } from '../shared/managed-profile.js'
 import { canTransitionOrder, canTransitionPayment, lifecycleTimestamps, ORDER_STATUSES, PAYMENT_STATUSES } from '../shared/order-lifecycle.js'
 import { paidSalesByRegion } from '../shared/sales-metrics.js'
+import { createAuth } from './auth.js'
+import { createRateLimiter, safeEqual } from './security.js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY
@@ -54,27 +56,9 @@ if (process.env.SENTRY_DSN) {
   })
 }
 
-// Simple in-memory rate limiter. On Vercel each warm instance keeps its own
-// counters, which still blunts bursts; pair with Vercel WAF or Upstash Redis
-// for strict global limits.
-const rateBuckets = new Map()
-function clientIp(request) {
-  const forwarded = request.headers['x-forwarded-for']
-  if (typeof forwarded === 'string' && forwarded.length) return forwarded.split(',')[0].trim()
-  return request.socket?.remoteAddress || 'unknown'
-}
-async function rateLimit(key, limit, windowMs) {
-  const { data, error } = await supabase.rpc('consume_rate_limit', { p_key:key, p_limit:limit, p_window_seconds:Math.ceil(windowMs / 1000) })
-  if (!error && typeof data === 'boolean') return data
-  const now = Date.now()
-  let bucket = rateBuckets.get(key)
-  if (!bucket || now >= bucket.resetAt) {
-    if (rateBuckets.size > 5000) for (const [entryKey, entry] of rateBuckets) if (now >= entry.resetAt) rateBuckets.delete(entryKey)
-    bucket = { count:0, resetAt:now + windowMs }; rateBuckets.set(key, bucket)
-  }
-  bucket.count += 1
-  return bucket.count <= limit
-}
+// Simple in-memory rate limiting is a fallback; use the Supabase RPC in production.
+const { clientIp, rateLimit } = createRateLimiter(supabase)
+const { signAdminToken, signOrderToken, adminCookie, clearAdminCookie, isAdmin, isOrderToken } = createAuth(adminTokenSecret, { secureCookies:Boolean(process.env.VERCEL) })
 async function recordIncident({ severity = 'error', source, message, requestId = null }) {
   try {
     const safeMessage = clean(message, 500).replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email]')
@@ -82,8 +66,8 @@ async function recordIncident({ severity = 'error', source, message, requestId =
   } catch (error) { console.error('Incident logging failed:', error.message) }
 }
 
-function send(response, status, payload) {
-  response.writeHead(status, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' })
+function send(response, status, payload, options = {}) {
+  response.writeHead(status, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store', ...options })
   response.end(JSON.stringify(payload))
 }
 
@@ -355,43 +339,6 @@ async function sendFeedbackLinkEmail({ email, name, feedbackUrl, expiresAt }) {
   })
 }
 
-function safeEqual(left, right) {
-  const a = Buffer.from(left)
-  const b = Buffer.from(right)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
-function signAdminToken() {
-  const payload = Buffer.from(JSON.stringify({ role:'admin', exp:Date.now() + 8 * 60 * 60 * 1000 })).toString('base64url')
-  const signature = createHmac('sha256', adminTokenSecret).update(payload).digest('base64url')
-  return `${payload}.${signature}`
-}
-function signOrderToken(orderNumber) {
-  const payload = Buffer.from(JSON.stringify({ orderNumber, exp:Date.now() + 2 * 60 * 60 * 1000 })).toString('base64url')
-  const signature = createHmac('sha256', adminTokenSecret).update(payload).digest('base64url')
-  return `${payload}.${signature}`
-}
-function isOrderToken(request, orderNumber) {
-  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || ''
-  const [payload, signature] = token.split('.')
-  if (!payload || !signature) return false
-  const expected = createHmac('sha256', adminTokenSecret).update(payload).digest('base64url')
-  if (!safeEqual(signature, expected)) return false
-  try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    return data.orderNumber === orderNumber && Number(data.exp) > Date.now()
-  } catch { return false }
-}
-function isAdmin(request) {
-  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '') || ''
-  const [payload, signature] = token.split('.')
-  if (!payload || !signature) return false
-  const expected = createHmac('sha256', adminTokenSecret).update(payload).digest('base64url')
-  if (!safeEqual(signature, expected)) return false
-  try {
-    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    return data.role === 'admin' && Number(data.exp) > Date.now()
-  } catch { return false }
-}
 function createOrderNumber() {
   const day = new Date().toISOString().slice(0, 10).replaceAll('-', '')
   return `TAP-${day}-${randomUUID().slice(0, 6).toUpperCase()}`
@@ -525,8 +472,20 @@ async function requestHandler(request, response) {
     try {
       const body = await readJson(request)
       if (!safeEqual(clean(body.password, 200), adminPassword)) return send(response, 401, { error:'Incorrect password.' })
-      return send(response, 200, { token:signAdminToken(), expiresIn:28_800 })
+      const token = signAdminToken()
+      response.setHeader('set-cookie', adminCookie(token))
+      return send(response, 200, { authenticated:true, expiresIn:28_800 })
     } catch { return send(response, 400, { error:'Invalid request.' }) }
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/admin/logout') {
+    response.setHeader('set-cookie', clearAdminCookie())
+    return send(response, 200, { authenticated:false })
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/admin/session') {
+    const authenticated = isAdmin(request)
+    return send(response, authenticated ? 200 : 401, authenticated ? { authenticated:true } : { error:'Admin session required.' })
   }
 
   if (url.pathname.startsWith('/api/admin/')) {
@@ -948,7 +907,7 @@ async function requestHandler(request, response) {
       .select('*')
       .eq('public_id', publicPageMatch[1]).eq('status', 'published').maybeSingle()
     if (error || !data) return send(response, 404, { error:'Page not found.' })
-    return send(response, 200, { page:managedProfilePayload(data) })
+    return send(response, 200, { page:managedProfilePayload(data) }, { 'cache-control':'public, max-age=60, stale-while-revalidate=300' })
   }
 
   const nfcTagMatch = url.pathname.match(/^\/(?:api\/)?t\/([A-Za-z0-9]{6,16})$/i)
@@ -1183,7 +1142,7 @@ async function requestHandler(request, response) {
     return send(response, 200, {
       feedback:data,
       averages:{ overall:average('rating'), product:average('product_rating'), service:average('service_rating'), count:data.length },
-    })
+    }, { 'cache-control':'public, max-age=60, stale-while-revalidate=300' })
   }
 
   if (request.method !== 'POST' || url.pathname !== '/api/orders') return send(response, 404, { error:'Not found' })

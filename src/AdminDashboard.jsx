@@ -40,7 +40,8 @@ function SalesChart({ data = [], label, type }) {
 }
 
 export default function AdminDashboard() {
-  const [token, setToken] = useState(() => sessionStorage.getItem('tappy-admin-token') || '')
+  const [token, setToken] = useState('')
+  const [authChecked, setAuthChecked] = useState(false)
   const [password, setPassword] = useState('')
   const [orders, setOrders] = useState([])
   const [orderMeta, setOrderMeta] = useState({ total:0, totalPages:1 })
@@ -119,6 +120,13 @@ export default function AdminDashboard() {
     }))
   }, [selectedThreadId, selectedThread?.id])
 
+  useEffect(() => {
+    fetch('/api/admin/session', { credentials:'same-origin' })
+      .then((response) => { if (response.ok) setToken('cookie') })
+      .catch(() => {})
+      .finally(() => setAuthChecked(true))
+  }, [])
+
   function notify(message, type = 'success') { setNotification({ message, type, id:Date.now() }) }
   function changeView(view) { setAdminView(view); setOrderTab('all'); setQuery(''); setSelectedOrder(null); if (view !== 'pages') setSelectedPageId('') }
   function showOrders(tab = 'all') { setAdminView('orders'); setOrderTab(tab); setQuery(''); setSelectedOrder(null) }
@@ -129,7 +137,7 @@ export default function AdminDashboard() {
   }
   function beginSearch() { if (['overview','reports'].includes(adminView)) changeView('orders') }
   function logout(message = '') {
-    sessionStorage.removeItem('tappy-admin-token')
+    fetch('/api/admin/logout', { method:'POST', credentials:'same-origin' }).catch(() => {})
     setToken('')
     setOrders([])
     setOrderMeta({ total:0, totalPages:1 })
@@ -195,7 +203,7 @@ export default function AdminDashboard() {
   }
 
   async function requestJson(url, options = {}) {
-    const response = await fetch(url, { ...options, headers:{ authorization:`Bearer ${token}`, ...options.headers } })
+    const response = await fetch(url, { ...options, credentials:'same-origin', headers:{ ...options.headers } })
     const result = await response.json()
     if (response.status === 401) {
       logout('Your admin session expired.')
@@ -209,13 +217,14 @@ export default function AdminDashboard() {
     if (!quiet) setLoading(true)
     setError('')
     try {
-      const headers = { authorization:`Bearer ${activeToken}` }
+      const headers = {}
       const params = new URLSearchParams({ status:orderTab, page:String(safePage), limit:String(ORDERS_PER_PAGE) })
       if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
-      const queueRequest = fetch(`/api/admin/orders?${params}`, { headers })
-      const countsRequest = fetch('/api/admin/order-counts', { headers }).catch(() => null)
-      const salesRequest = fetch('/api/admin/sales-metrics', { headers }).catch(() => null)
-      const analyticsRequest = fetch('/api/admin/analytics', { headers }).catch(() => null)
+      const requestOptions = { headers, credentials:'same-origin' }
+      const queueRequest = fetch(`/api/admin/orders?${params}`, requestOptions)
+      const countsRequest = fetch('/api/admin/order-counts', requestOptions).catch(() => null)
+      const salesRequest = fetch('/api/admin/sales-metrics', requestOptions).catch(() => null)
+      const analyticsRequest = fetch('/api/admin/analytics', requestOptions).catch(() => null)
       const [response, countsResponse, salesResponse, analyticsResponse] = await Promise.all([queueRequest, countsRequest, salesRequest, analyticsRequest])
       const result = await response.json()
       const countsResult = countsResponse ? await countsResponse.json() : null
@@ -484,8 +493,7 @@ export default function AdminDashboard() {
       const response = await fetch('/api/admin/login', { method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ password }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Sign in failed.')
-      sessionStorage.setItem('tappy-admin-token', result.token)
-      setToken(result.token)
+      setToken('cookie')
       setPassword('')
     } catch (requestError) { setError(requestError.message) }
     finally { setLoading(false) }
@@ -519,7 +527,8 @@ export default function AdminDashboard() {
     finally { setLoading(false) }
   }
 
-  if (!token) return <main className="admin-login"><a className="admin-wordmark" href="/">tappy.</a><form onSubmit={login}><LockKey size={27}/><h1>Order desk.</h1><p>Private access for Tappy operations.</p><label>Admin password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required autoFocus/></label><button className="button" type="submit" disabled={loading}>{loading ? 'Checking...' : 'Sign in'}</button>{error && <p className="admin-error" role="alert">{error}</p>}</form></main>
+  if (!authChecked) return <main className="admin-login"><a className="admin-wordmark" href="/">tappy.</a><p role="status" aria-live="polite">Checking your admin session…</p></main>
+  if (!token) return <main className="admin-login"><a className="admin-wordmark" href="/">tappy.</a><form onSubmit={login}><LockKey size={27}/><h1>Order desk.</h1><p>Private access for Tappy operations.</p><label>Admin password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required autoFocus/></label><button className="button" type="submit" disabled={loading}>{loading ? 'Checking…' : 'Sign in'}</button>{error && <p className="admin-error" role="alert">{error}</p>}</form></main>
 
   return <main className="admin-page">
     <header className="admin-header"><a className="admin-wordmark" href="/">tappy.</a><nav className="admin-nav" aria-label="Dashboard"><button type="button" className={adminView === 'overview' ? 'active' : ''} onClick={() => changeView('overview')}><House size={18}/>Overview</button><button type="button" className={adminView === 'orders' ? 'active' : ''} onClick={() => showOrders()}><ShoppingBag size={18}/>Orders</button><button type="button" className={adminView === 'messages' ? 'active' : ''} onClick={() => changeView('messages')}><ChatCircleText size={18}/>Messages</button><button type="button" className={adminView === 'pages' ? 'active' : ''} onClick={() => changeView('pages')}><IdentificationCard size={18}/>Tappy Pages</button><button type="button" className={adminView === 'nfc' ? 'active' : ''} onClick={() => changeView('nfc')}><LinkSimple size={18}/>NFC Links</button><button type="button" className={adminView === 'reports' ? 'active' : ''} onClick={() => changeView('reports')}><ChartLineUp size={18}/>Reports</button><button type="button" className={adminView === 'health' ? 'active' : ''} onClick={() => changeView('health')}><Database size={18}/>System Health</button><button type="button" className={adminView === 'feedback' ? 'active' : ''} onClick={() => changeView('feedback')}><Star size={18}/>Feedback</button></nav><div className="admin-header-actions"><span>Tappy admin</span><button type="button" onClick={() => logout()}><SignOut size={17}/>Sign out</button></div></header>

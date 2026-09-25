@@ -12,7 +12,7 @@ npm run build
 
 ### Unit tests
 
-`npm test` covers managed profile normalization, order lifecycle enforcement, and sales metrics.
+`npm test` covers managed profile normalization, order lifecycle enforcement, sales metrics, admin cookie sessions, login rate limiting, webhook signature rejection, order payload validation, and payment-proof authorization.
 
 ### End-to-end tests
 
@@ -54,7 +54,10 @@ Manually dispatched workflows on `main` can run production smoke and Playwright 
 - Resend logs: outbound delivery and inbound webhook attempts.
 - Supabase logs: database, RPC, and storage failures.
 
+### Security regression checks
+
+Run `npm test` before every deployment. The API security tests start isolated local servers with test-only credentials; they do not access production Supabase data. Pay particular attention to failures in `test/admin-auth.test.js`, which protect the admin cookie, login rate limiter, Resend webhook boundary, order validation, and payment-proof session.
+
 ## Post-deployment observation
 
 For changes affecting orders, payment, email, NFC redirects, tokens, or database migrations, actively observe at least one real or controlled test transaction before considering the deployment complete.
-

@@ -4,6 +4,8 @@
 
 - Store production secrets only in Vercel and provider secret stores.
 - Never expose `SUPABASE_SECRET_KEY`, `ADMIN_TOKEN_SECRET`, `CRON_SECRET`, Resend secrets, or Sentry auth tokens through `VITE_` variables.
+- Admin authentication uses an `HttpOnly`, `SameSite=Strict` session cookie named `tappy_admin`; the browser must not persist or manually attach the signed token.
+- Admin sessions are checked through `GET /api/admin/session` and cleared through `POST /api/admin/logout`.
 - Use different high-entropy values for admin session signing and Supabase access.
 - Rotate a secret immediately if it appears in Git history, logs, screenshots, or chat.
 
@@ -64,4 +66,3 @@ curl.exe -i https://www.tappycard.tech/api/admin/orders
 Expected unauthenticated admin result: HTTP 401 with `Admin session required.`
 
 Never place Markdown link syntax around URLs passed to `curl.exe`.
-
